@@ -5,6 +5,11 @@
 
 ## 실행
 
+**`mygdeck.bat`을 더블클릭**하면 열립니다. 처음 한 번은 자동으로 빌드합니다(몇 분). 코드를 고친 뒤에는 `mygdeck.bat rebuild`.
+프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Alt+N`)로 폴더를 골라 추가합니다.
+
+개발용 명령:
+
 ```bash
 npm install
 npm run tauri dev                 # 개발 실행 (mygdeck.json의 프로젝트를 연다)
