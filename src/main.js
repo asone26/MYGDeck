@@ -38,6 +38,7 @@ async function boot() {
   $("add-btn").onclick = addProject;
   $("empty-add").onclick = addProject;
   for (const p of loaded.config.projects) addCard(p, false);
+  app.active = 0;
   layout();
   app.cards[0]?.focusDefault();
 }

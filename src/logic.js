@@ -152,6 +152,77 @@ export function isDeckKey(e) {
 
 export const DENSITIES = ["mini", "compact", "full"];
 
+// ---- Summary view (spec 3.2 ④-1): rule-based, from the agent's own transcript ----
+
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const CHECK_CMD = /\b(test|tests|jest|vitest|pytest|mocha|tsc|eslint|lint|clippy|build|check|vet)\b|cargo (test|build|check)|go (test|build)|npm (run )?(test|build)|make\b|gradle|mvn/i;
+/** On-screen markers of an interactive CLI menu the user must answer in the raw CLI. */
+export const MENU = /Enter to confirm|Esc to cancel|❯\s*\d+\.|\(y\/n\)|\[y\/N\]|\[Y\/n\]/i;
+
+/** Progress from `.mygdeck/progress.md` checkboxes: done / total and the next open item. */
+export function parseProgress(md) {
+  if (!md) return null;
+  const items = [...md.matchAll(/^\s*[-*]\s+\[( |x|X)\]\s+(.+)$/gm)];
+  if (!items.length) return null;
+  const done = items.filter((m) => m[1] !== " ").length;
+  const next = items.find((m) => m[1] === " ")?.[2].trim() ?? null;
+  return { done, total: items.length, next };
+}
+
+function firstSentence(text) {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const m = plain.match(/^(.{8,}?[.!?。])(\s|$)/);
+  const s = m ? m[1] : plain;
+  return s.length > 110 ? s.slice(0, 108) + "…" : s;
+}
+
+function errorLine(err) {
+  const lines = String(err).split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !/^exit code \d+$/i.test(l));
+  const s = lines.find((l) => /error|fail|exception|cannot|not found|undefined/i.test(l)) ?? lines[0] ?? "";
+  return s.length > 140 ? s.slice(0, 138) + "…" : s;
+}
+
+/**
+ * Card summary for a finished turn: what happened, can it be trusted, where are we, what next.
+ * Never claims success without proof (spec: summaries are not optimistic).
+ */
+export function summarizeTurn(turn, progress) {
+  const tools = turn?.tools ?? [];
+  const edited = new Set(tools.filter((t) => EDIT_TOOLS.has(t.name)).map((t) => t.detail.split(/[\\/]/).pop()));
+  const commands = tools.filter((t) => t.name === "Bash");
+  const check = [...commands].reverse().find((t) => CHECK_CMD.test(t.detail));
+  const last = turn?.texts?.at(-1) ?? "";
+  const what = [edited.size && `파일 ${edited.size}개 수정`, commands.length && `명령 ${commands.length}개 실행`].filter(Boolean).join(" · ");
+  const s = { state: "done", line: firstSentence(last) || what || "완료", what, proof: null, cause: null, next: null, big: null };
+  if (progress) s.big = `진행 ${progress.done}/${progress.total}`;
+
+  if (check?.error) {
+    s.state = "failed";
+    s.line = `${check.detail} 실패`;
+    s.cause = errorLine(check.error);
+    s.next = `${check.detail} 실패 원인을 찾아서 고쳐줘`;
+    return s;
+  }
+  if (check) s.proof = { ok: true, text: `${check.detail} 통과` };
+  else if (edited.size) s.proof = { ok: false, text: "근거 없음: 직접 확인 필요" };
+
+  if (s.proof && !s.proof.ok) s.next = "방금 바꾼 내용을 테스트나 실행으로 확인해줘";
+  else if (progress?.next) s.next = `${progress.next} 진행해줘`;
+  return s;
+}
+
+/** Plain-language line for a permission prompt, from the last tool the agent tried. */
+export function permissionLine(tool, detail) {
+  if (!tool) return "에이전트가 허용을 기다립니다";
+  if (tool === "Bash") return `허용하면 이 명령이 실행됩니다: ${detail}`;
+  if (EDIT_TOOLS.has(tool)) return `허용하면 이 파일이 바뀝니다: ${detail}`;
+  return `허용하면 ${tool}${detail ? ` (${detail})` : ""}을 실행합니다`;
+}
+
 export function basename(p) {
   return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename } from "./logic.js";
+import { summarizeTurn, parseProgress, permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "four", "many"]);
@@ -38,6 +38,45 @@ test("selection to line range and mention", () => {
   assert.deepEqual(lineRange("", "one"), [1, 1]);
   assert.equal(mentionFor("@{path}", "src/a b.ts", [3, 4]), '@"src/a b.ts" L3-4');
   assert.equal(mentionFor(undefined, "x.rs"), "@x.rs");
+});
+
+test("summary: failed check gives cause and next step", () => {
+  const turn = {
+    texts: ["I updated the login rule. Tests are failing."],
+    tools: [
+      { name: "Edit", detail: "C:/p/src/auth.js" },
+      { name: "Bash", detail: "npm test", error: "Exit code 1\n  ✕ login rejects short pw\nError: expected false" },
+    ],
+  };
+  const s = summarizeTurn(turn, null);
+  assert.equal(s.state, "failed");
+  assert.equal(s.cause, "Error: expected false");
+  assert.match(s.next, /npm test 실패 원인/);
+});
+
+test("summary: never claims success without proof", () => {
+  const s = summarizeTurn({ texts: ["Added the password toggle."], tools: [{ name: "Write", detail: "a/b.tsx" }] }, null);
+  assert.equal(s.state, "done");
+  assert.equal(s.line, "Added the password toggle.");
+  assert.equal(s.proof.ok, false);
+  assert.match(s.next, /확인/);
+});
+
+test("summary: passing check and progress point to the next item", () => {
+  const progress = parseProgress("- [x] 로그인\n- [ ] 회원가입\n* [X] 설정\n");
+  assert.deepEqual(progress, { done: 2, total: 3, next: "회원가입" });
+  const s = summarizeTurn({ texts: ["Done."], tools: [{ name: "Edit", detail: "x.rs" }, { name: "Bash", detail: "cargo test" }] }, progress);
+  assert.deepEqual(s.proof, { ok: true, text: "cargo test 통과" });
+  assert.equal(s.big, "진행 2/3");
+  assert.equal(s.next, "회원가입 진행해줘");
+  assert.equal(parseProgress("no boxes"), null);
+});
+
+test("menus and permission lines", () => {
+  assert.ok(MENU.test("❯ 1. Yes, switch to Haiku"));
+  assert.ok(MENU.test("Enter to confirm · Esc to cancel"));
+  assert.ok(!MENU.test("The command ran and printed ok."));
+  assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });
 
 test("deck keys work with and without physical key codes", () => {

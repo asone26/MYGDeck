@@ -3,6 +3,7 @@ pub mod config;
 pub mod fsx;
 pub mod hooks;
 pub mod pty;
+pub mod turn;
 pub mod watch;
 
 use tauri::Manager;
@@ -34,6 +35,7 @@ pub fn run() {
             fsx::read_file,
             fsx::changed_lines,
             fsx::read_spec,
+            turn::read_turn,
             watch::watch_project,
             watch::unwatch_project,
         ])
