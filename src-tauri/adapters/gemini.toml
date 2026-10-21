@@ -1,0 +1,6 @@
+name = "gemini"
+launch = "gemini"
+mention = "@{path}"
+clear_cmd = "/clear"
+status = "idle"
+commands = ["/help", "/clear", "/compress", "/model", "/memory", "/stats", "/tools", "/mcp", "/chat", "/quit"]

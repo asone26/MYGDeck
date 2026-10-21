@@ -1,0 +1,14 @@
+name = "claude-code"
+launch = "claude"
+# {settings} is replaced with the deck's hook settings file (status badges, spec 5.3).
+hook_args = "--settings {settings}"
+mention = "@{path}"
+model_cmd = "/model {model}"
+models = ["default", "opus", "sonnet", "haiku"]
+clear_cmd = "/clear"
+status = "hooks"
+commands = [
+  "/help", "/clear", "/compact", "/context", "/cost", "/model", "/review", "/init",
+  "/memory", "/config", "/permissions", "/agents", "/mcp", "/resume", "/rewind",
+  "/status", "/doctor", "/exit",
+]

@@ -1,0 +1,6 @@
+name = "codex"
+launch = "codex"
+mention = "@{path}"
+clear_cmd = "/new"
+status = "idle"
+commands = ["/model", "/approvals", "/new", "/init", "/compact", "/diff", "/mention", "/status", "/quit"]
