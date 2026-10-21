@@ -107,7 +107,9 @@ button:hover { border-color: #3a4150; }
 .card[data-status="waiting"] .s-state { color: var(--warn); }
 .card[data-status="working"] .s-state { color: var(--work); }
 .card[data-status="done"] .s-state { color: var(--ok); }
-.s-time, .s-what, .s-big { color: var(--muted); }
+.s-time, .s-what, .s-big, .s-ask { color: var(--muted); }
+.s-ask { font-size: 12px; }
+button.stop { border-color: var(--bad); color: var(--bad); }
 .s-line { font-size: 14px; line-height: 1.5; }
 .s-line.clickable { cursor: pointer; }
 .s-line.clickable:hover { text-decoration: underline dotted; }

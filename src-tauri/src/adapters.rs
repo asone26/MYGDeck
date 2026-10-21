@@ -15,6 +15,9 @@ pub struct Adapter {
     pub models: Vec<String>,
     #[serde(default)]
     pub clear_cmd: String,
+    /// Keys that stop the agent's current work without quitting it (Esc for most agent CLIs).
+    #[serde(default = "default_interrupt")]
+    pub interrupt: String,
     #[serde(default)]
     pub commands: Vec<String>,
     /// "hooks" when the agent reports its state through hooks, otherwise "idle" (output-silence guess).
@@ -26,6 +29,9 @@ pub struct Adapter {
 
 fn default_mention() -> String {
     "@{path}".into()
+}
+fn default_interrupt() -> String {
+    "\u{1b}".into()
 }
 fn default_status() -> String {
     "idle".into()

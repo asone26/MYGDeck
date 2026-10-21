@@ -68,12 +68,23 @@ test("summary: never claims success without proof", () => {
 
 test("summary: passing check and progress point to the next item", () => {
   const progress = parseProgress("- [x] 로그인\n- [ ] 회원가입\n* [X] 설정\n");
-  assert.deepEqual(progress, { done: 2, total: 3, next: "회원가입" });
+  assert.deepEqual(progress, { done: 2, total: 3, next: "회원가입", source: "progress" });
   const s = summarizeTurn({ texts: ["Done."], tools: [{ name: "Edit", detail: "x.rs" }, { name: "Bash", detail: "cargo test" }] }, progress);
   assert.deepEqual(s.proof, { ok: true, text: "cargo test 통과" });
   assert.equal(s.big, "진행 2/3");
   assert.equal(s.next, "회원가입 진행해줘");
   assert.equal(parseProgress("no boxes"), null);
+});
+
+test("summary: request line, docs-only proof, spec progress", () => {
+  const spec = parseProgress("- [x] a\n- [ ] **b**\n", "spec");
+  const s = summarizeTurn({ prompt: "README 고쳐줘\n자세히", texts: ["Checking.", "README를 고쳤습니다."], tools: [{ name: "Edit", detail: "C:/p/README.md" }] }, spec);
+  assert.equal(s.ask, "README 고쳐줘 자세히");
+  assert.equal(s.line, "README를 고쳤습니다.");
+  assert.deepEqual(s.proof, { ok: true, text: "문서만 수정 · 실행 확인 불필요" });
+  assert.equal(s.big, "스펙 진행 1/2");
+  assert.equal(s.next, null);
+  assert.equal(summarizeTurn({ texts: [], tools: [{ name: "PowerShell", detail: "npm test" }] }, null).proof.ok, true);
 });
 
 test("menus and permission lines", () => {

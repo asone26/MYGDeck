@@ -100,6 +100,7 @@ export class Card {
     this.$(".badge").textContent = BADGE[status];
     this.$(".stext").textContent = text;
     this.$(".stext").title = text;
+    this.composer.setBusy(status === "working" || status === "waiting");
     this.updateView();
     this.app.renderStrip();
   }
@@ -179,6 +180,7 @@ export class Card {
   onHook(event, data) {
     if (data?.transcript) this.transcript = data.transcript;
     if (event === "prompt") {
+      this.turnSeq = (this.turnSeq ?? 0) + 1;
       this.turnTools = [];
       this.turnStart = Date.now();
       this.answerOpen = false;
@@ -195,14 +197,38 @@ export class Card {
     if (s) this.setStatus(s.status, s.text);
   }
 
-  /** Turn finished: read what the agent did from its transcript and summarize it. */
+  /**
+   * Turn finished: read what the agent did from its transcript and summarize it.
+   * The stop hook can fire before the final answer is flushed to the transcript, so read twice.
+   */
   async finishTurn() {
-    const turn = this.transcript ? await invoke("read_turn", { path: this.transcript }).catch(() => null) : null;
-    const progress = await invoke("read_file", { root: this.root, rel: ".mygdeck/progress.md" }).catch(() => null);
-    this.turn = turn;
-    this.contextTokens = turn?.context_tokens ?? null;
-    this.summary = summarizeTurn(turn ?? { texts: [], tools: [] }, parseProgress(progress));
-    this.setStatus(this.summary.state, this.summary.line);
+    const turnAtStop = this.turnSeq;
+    const progress = await this.loadProgress();
+    for (const wait of [300, 1500]) {
+      await new Promise((r) => setTimeout(r, wait));
+      if (turnAtStop !== this.turnSeq) return; // the user already started the next turn
+      const turn = this.transcript ? await invoke("read_turn", { path: this.transcript }).catch(() => null) : null;
+      this.turn = turn;
+      this.contextTokens = turn?.context_tokens ?? null;
+      this.summary = summarizeTurn(turn ?? { texts: [], tools: [] }, progress);
+      this.setStatus(this.summary.state, this.summary.line);
+    }
+  }
+
+  /** Big picture: the work log if there is one, else the spec's own checklist. */
+  async loadProgress() {
+    const log = await invoke("read_file", { root: this.root, rel: ".mygdeck/progress.md" }).catch(() => null);
+    const fromLog = parseProgress(log, "progress");
+    if (fromLog) return fromLog;
+    const spec = await invoke("read_spec", { root: this.root, preferred: this.cfg.spec_file ?? null }).catch(() => null);
+    return parseProgress(spec?.content, "spec");
+  }
+
+  /** Stop the agent's current work: the adapter's interrupt key (Esc for Claude Code). */
+  interrupt() {
+    if (!this.agent.alive) return;
+    this.agent.write(this.adapter?.interrupt || "\x03");
+    if (this.status === "working" || this.status === "waiting") this.setStatus("idle", "중지함");
   }
 
   onExit(code, err) {

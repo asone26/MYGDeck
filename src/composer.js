@@ -5,7 +5,10 @@ export class Composer {
     const a = card.adapter;
     el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select>
       <div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
+      <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>
       <button class="send" title="전송 (Enter)">↵</button>`;
+    this.stopBtn = el.querySelector(".stop");
+    this.stopBtn.onclick = () => card.interrupt();
     el.querySelector(".ptag").textContent = card.name;
     this.ta = el.querySelector("textarea");
     this.ta.placeholder = `${card.name}에게 지시 · / 명령`;
@@ -118,5 +121,9 @@ export class Composer {
 
   focus() {
     this.ta.focus();
+  }
+
+  setBusy(busy) {
+    this.stopBtn.hidden = !busy;
   }
 }

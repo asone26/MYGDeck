@@ -280,6 +280,7 @@ window.addEventListener(
     else if (k === "KeyI") c.viewer.insertSelection();
     else if (k === "KeyT") c.toggleShell();
     else if (k === "KeyC") c.toggleView();
+    else if (k === "KeyX") c.interrupt();
     else if (k === "KeyW") closeCard(c);
   },
   true,

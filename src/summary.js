@@ -54,6 +54,9 @@ export function renderSummary(card, box) {
     const steps = el("ul", "s-steps");
     for (const t of card.turnTools.slice(-6)) steps.append(el("li", "", t));
     box.append(steps);
+    const stop = el("div", "s-next");
+    stop.append(el("span", "", "멈추고 싶으면 중지하세요. 지금까지 한 작업은 남습니다."), button("중지 (Alt+X)", () => card.interrupt(), "stop"));
+    box.append(stop);
   } else if (st === "waiting") {
     box.append(el("div", "s-line", card.statusText));
     const next = el("div", "s-next");
@@ -64,6 +67,7 @@ export function renderSummary(card, box) {
     );
     box.append(next);
   } else if (s) {
+    if (s.ask) box.append(el("div", "s-ask", `요청: ${s.ask}`));
     const line = el("div", "s-line clickable", s.line);
     line.title = "눌러서 AI 답변 보기 (Enter)";
     line.onclick = () => card.toggleAnswer();
