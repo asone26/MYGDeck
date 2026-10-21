@@ -50,7 +50,8 @@ pub fn load_config() -> Loaded {
     let local = std::env::current_dir().unwrap_or_default().join("mygdeck.json");
     let source = if local.is_file() { local } else { home().join("mygdeck.json") };
     let mut config = read(&source).unwrap_or_default();
-    let args: Vec<String> = std::env::args().skip(1).filter(|a| !a.starts_with('-')).collect();
+    // Only existing folders count: launchers such as `tauri dev` append their own flags and values.
+    let args: Vec<String> = std::env::args().skip(1).map(|a| expand(&a)).filter(|a| std::path::Path::new(a).is_dir()).collect();
     if !args.is_empty() {
         config.projects = args.into_iter().map(|path| Project { path, ..Default::default() }).collect();
     }

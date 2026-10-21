@@ -48,21 +48,19 @@ button:hover { border-color: #3a4150; }
 @media (max-width: 1100px) { .keys { display: none; } }
 
 /* deck: Auto preset (spec 3.0 ⑥) */
-#deck:empty { display: none; }
-#deck { flex: 1; min-height: 0; display: grid; gap: 6px; padding: 6px; grid-auto-rows: minmax(0, 1fr); }
-#deck[data-layout="one"] { grid-template-columns: minmax(0, 1fr); }
-#deck[data-layout="two"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-#deck[data-layout="three"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-#deck[data-layout="four"] { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-#deck[data-layout="focus"] {
-  grid-template-columns: minmax(0, 1fr) 340px;
-  grid-template-rows: repeat(30, min-content) 1fr;
-  grid-auto-rows: min-content;
-}
-#deck[data-layout="focus"] .card.active { grid-column: 1; grid-row: 1 / -1; }
-#deck[data-layout="focus"] .card:not(.active) { grid-column: 2; }
-#deck[data-layout="focus"] .card:not(.active) :is(.mods, .body, .shell) { display: none; }
-#deck[data-layout="focus"] .card:not(.active) .peek { display: block; }
+#deck { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 6px; }
+#grid { flex: 1; min-width: 0; display: grid; gap: 6px; grid-auto-rows: minmax(0, 1fr); }
+#grid[data-layout="one"] { grid-template-columns: minmax(0, 1fr); }
+#grid[data-layout="two"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#grid[data-layout="three"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#grid[data-layout="four"] { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+#grid[data-layout="many"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Side column: shrunk cards, or every inactive card when 5+ projects are open (spec 3.0 ⑤⑥). */
+#side { flex: none; width: 340px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+#side:empty { display: none; }
+#side .card { flex: none; }
+#side .card :is(.mods, .body, .shell) { display: none; }
+#side .card:not([data-density="mini"]) .peek { display: block; }
 
 /* card */
 .card {
@@ -134,7 +132,7 @@ button:hover { border-color: #3a4150; }
 .ptag { color: var(--pc); font-weight: 600; font-size: 11px; padding-bottom: 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cbox { position: relative; flex: 1; min-width: 0; }
 .composer textarea {
-  display: block; width: 100%; box-sizing: border-box; resize: none; max-height: 140px;
+  display: block; width: 100%; box-sizing: border-box; resize: none; max-height: 140px; overflow-y: hidden;
   background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
   padding: 5px 8px; font: 13px/1.4 system-ui, "Malgun Gothic", sans-serif;
 }

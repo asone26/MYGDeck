@@ -1,9 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoLayout, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename } from "./logic.js";
+import { autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename } from "./logic.js";
 
 test("auto layout follows project count", () => {
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map(autoLayout), ["one", "one", "two", "three", "four", "focus", "focus"]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "four", "many"]);
+});
+
+test("shrunk cards move aside, 5+ projects focus on the active one", () => {
+  assert.deepEqual(splitDeck(["full", "compact", "full"], 0), { main: [0, 2], side: [1] });
+  assert.deepEqual(splitDeck(["mini", "compact"], 1), { main: [0, 1], side: [] });
+  assert.deepEqual(splitDeck(Array(5).fill("full"), 3), { main: [3], side: [0, 1, 2, 4] });
 });
 
 test("hook events map to card status", () => {
@@ -32,6 +38,22 @@ test("selection to line range and mention", () => {
   assert.deepEqual(lineRange("", "one"), [1, 1]);
   assert.equal(mentionFor("@{path}", "src/a b.ts", [3, 4]), '@"src/a b.ts" L3-4');
   assert.equal(mentionFor(undefined, "x.rs"), "@x.rs");
+});
+
+test("deck keys work with and without physical key codes", () => {
+  assert.equal(isDeckKey({ altKey: true, code: "KeyJ", key: "ㅓ" }), true);
+  assert.equal(isDeckKey({ altKey: true, code: "", key: "j" }), true);
+  assert.equal(isDeckKey({ altKey: true, code: "", key: "=" }), true);
+  assert.equal(isDeckKey({ altKey: true, ctrlKey: true, code: "KeyJ" }), false);
+  assert.equal(isDeckKey({ altKey: true, code: "KeyB", key: "b" }), false);
+  assert.equal(keyCode({ code: "", key: "3" }), "Digit3");
+});
+
+test("open projects never share a color", () => {
+  const used = [];
+  for (const name of ["shop", "blog", "api", "a", "b", "c", "d", "e", "f", "g"]) used.push(projectColor(name, used));
+  assert.equal(new Set(used).size, 10);
+  assert.equal(projectColor("shop"), projectColor("shop"));
 });
 
 test("paste sequence", () => {

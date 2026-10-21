@@ -30,7 +30,7 @@ export class Card {
   constructor(app, cfg, adapter) {
     Object.assign(this, { app, cfg, adapter, root: cfg.path, name: basename(cfg.path) });
     this.id = `c${++cardSeq}`;
-    this.color = projectColor(this.name);
+    this.color = projectColor(this.name, app.cards.map((c) => c.color));
     this.hooks = adapter?.status === "hooks";
     this.files = null;
     this.peek = [];

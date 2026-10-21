@@ -1,15 +1,38 @@
 // Pure helpers (no DOM, no Tauri) so they can be tested with `node --test`.
 
-/** Auto preset (spec 3.0 ⑥): layout name for a project count. */
+/** Auto preset (spec 3.0 ⑥): grid shape for the cards shown at full size. */
 export function autoLayout(n) {
-  return ["one", "one", "two", "three", "four"][n] ?? "focus";
+  return ["one", "one", "two", "three", "four"][n] ?? "many";
 }
 
-/** Stable per-project color so the same project always looks the same (spec 3.0 ③). */
-export function projectColor(name) {
+/**
+ * Which cards get the main area and which are stacked in the narrow side column.
+ * Up to 4 projects: full-size cards share the main area, shrunk ones move aside.
+ * 5 or more: only the active card is large (Focus). Returns index lists.
+ */
+export function splitDeck(densities, active) {
+  const all = densities.map((_, i) => i);
+  if (densities.length >= 5) return { main: [active], side: all.filter((i) => i !== active) };
+  const main = all.filter((i) => densities[i] === "full");
+  if (!main.length) return { main: all, side: [] };
+  return { main, side: all.filter((i) => densities[i] !== "full") };
+}
+
+const HUES = [28, 205, 135, 320, 52, 265, 175, 0, 95, 235];
+
+/**
+ * Per-project color (spec 3.0 ③). The name picks a preferred color so a project usually keeps
+ * its color, but open projects never share one: the point is not confusing two cards.
+ */
+export function projectColor(name, used = []) {
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return `hsl(${h % 360} 70% 62%)`;
+  const colors = HUES.map((hue) => `hsl(${hue} 72% 62%)`);
+  for (let k = 0; k < colors.length; k++) {
+    const c = colors[(h + k) % colors.length];
+    if (!used.includes(c)) return c;
+  }
+  return colors[h % colors.length];
 }
 
 export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", done: "[v]", exited: "[x]" };
@@ -111,8 +134,20 @@ export const DECK_KEYS = new Set([
   "KeyI", "KeyT", "KeyN", "KeyW",
 ]);
 
+/**
+ * Physical key code. `code` keeps shortcuts working under the Korean IME; synthesized input
+ * (SendKeys, some remote tools) leaves it empty, so fall back to the typed key then.
+ */
+export function keyCode(e) {
+  if (e.code) return e.code;
+  const k = e.key ?? "";
+  if (/^[a-z]$/i.test(k)) return "Key" + k.toUpperCase();
+  if (/^[0-9]$/.test(k)) return "Digit" + k;
+  return { "=": "Equal", "+": "Equal", "-": "Minus" }[k] ?? k;
+}
+
 export function isDeckKey(e) {
-  return e.altKey && !e.ctrlKey && !e.metaKey && DECK_KEYS.has(e.code);
+  return e.altKey && !e.ctrlKey && !e.metaKey && DECK_KEYS.has(keyCode(e));
 }
 
 export const DENSITIES = ["mini", "compact", "full"];

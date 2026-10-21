@@ -8,7 +8,8 @@ export class Composer {
       <button class="send" title="전송 (Enter)">↵</button>`;
     el.querySelector(".ptag").textContent = card.name;
     this.ta = el.querySelector("textarea");
-    this.ta.placeholder = `${card.name}에 보낼 내용 · Enter 전송 · Shift+Enter 줄바꿈 · / 명령`;
+    this.ta.placeholder = `${card.name}에게 지시 · / 명령`;
+    this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일";
     this.slash = el.querySelector(".slash");
     this.sel = 0;
 
@@ -55,6 +56,7 @@ export class Composer {
   update() {
     this.ta.style.height = "auto";
     this.ta.style.height = Math.min(this.ta.scrollHeight, 140) + "px";
+    this.ta.style.overflowY = this.ta.scrollHeight > 140 ? "auto" : "hidden";
     const v = this.ta.value;
     const cmds = this.card.adapter?.commands ?? [];
     if (/^\/\S*$/.test(v) && cmds.length) this.showSlash(cmds.filter((c) => c.startsWith(v)));

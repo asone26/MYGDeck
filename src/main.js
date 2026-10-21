@@ -6,7 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Card } from "./card.js";
 import { ptys } from "./pty.js";
-import { BADGE, DENSITIES, autoLayout, fuzzyFilter, isDeckKey, nextAttention } from "./logic.js";
+import { BADGE, DENSITIES, autoLayout, fuzzyFilter, isDeckKey, keyCode, nextAttention, splitDeck } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
 const deck = $("deck");
@@ -28,6 +28,7 @@ let overlayKind = null;
 let overviewSel = 0;
 
 async function boot() {
+  await invoke("pty_reset");
   const [loaded, adapters, shell] = await Promise.all([invoke("load_config"), invoke("list_adapters"), invoke("default_shell")]);
   Object.assign(app, { adapters, shell, source: loaded.source });
   await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data));
@@ -50,7 +51,6 @@ function adapterFor(cfg) {
 function addCard(cfg, persist = true) {
   const card = new Card(app, cfg, adapterFor(cfg));
   app.cards.push(card);
-  deck.append(card.el);
   app.active = app.cards.length - 1;
   layout();
   // Start after layout so the terminal knows its real size.
@@ -85,13 +85,26 @@ function save() {
 }
 
 function layout() {
-  deck.dataset.layout = autoLayout(app.cards.length);
+  const { main, side } = splitDeck(app.cards.map((c) => c.density), app.active);
+  // In Focus (5+ projects) the one large card must show its CLI even if it was shrunk earlier.
+  if (side.length && main.length === 1 && app.cards[main[0]].density !== "full") app.cards[main[0]].setDensity("full");
+  place($("grid"), main);
+  place($("side"), side);
+  $("grid").dataset.layout = autoLayout(main.length);
   app.cards.forEach((c, i) => {
     c.setIndex(i);
     c.el.classList.toggle("active", i === app.active);
   });
+  deck.hidden = app.cards.length === 0;
   $("empty").hidden = app.cards.length > 0;
   renderStrip();
+}
+
+/** Move cards into a container in order, touching the DOM only when something changed. */
+function place(box, indexes) {
+  const want = indexes.map((i) => app.cards[i].el);
+  if (want.length === box.children.length && want.every((el, i) => box.children[i] === el)) return;
+  box.append(...want);
 }
 
 function setActive(i, focus = true) {
@@ -180,7 +193,10 @@ async function quickOpen() {
   let shown = [];
   const pick = (f) => {
     closeOverlay();
-    if (c.density !== "full") c.setDensity("full");
+    if (c.density !== "full") {
+      c.setDensity("full");
+      layout();
+    }
     c.viewer.open(f);
   };
   const draw = () => {
@@ -235,14 +251,14 @@ window.addEventListener(
       return renderOverview();
     }
     // Ctrl+P belongs to the CLI while the terminal has focus (spec 3.3).
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyP" && !e.target.closest?.(".xterm")) {
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && keyCode(e) === "KeyP" && !e.target.closest?.(".xterm")) {
       e.preventDefault();
       return quickOpen();
     }
     if (!isDeckKey(e)) return;
     e.preventDefault();
     e.stopPropagation();
-    const k = e.code;
+    const k = keyCode(e);
     const c = app.cards[app.active];
     if (k.startsWith("Digit")) setActive(Number(k.slice(5)) - 1);
     else if (k === "KeyJ") {
@@ -253,7 +269,10 @@ window.addEventListener(
     else if (!c) return;
     else if (k === "Equal" || k === "Minus") {
       const d = DENSITIES.indexOf(c.density) + (k === "Equal" ? 1 : -1);
-      if (d >= 0 && d < DENSITIES.length) c.setDensity(DENSITIES[d]);
+      if (d >= 0 && d < DENSITIES.length) {
+        c.setDensity(DENSITIES[d]);
+        layout();
+      }
     } else if (k === "ArrowLeft" || k === "ArrowRight") {
       setActive((app.active + (k === "ArrowRight" ? 1 : -1) + app.cards.length) % app.cards.length);
     } else if (k === "ArrowUp" || k === "ArrowDown") c.cycleFocus(k === "ArrowDown" ? 1 : -1);

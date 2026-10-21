@@ -26,6 +26,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_reset,
             pty::default_shell,
             fsx::list_dir,
             fsx::list_files,

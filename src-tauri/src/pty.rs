@@ -36,6 +36,28 @@ struct Exit {
     code: Option<u32>,
 }
 
+/// Runtime variables a running Claude Code session sets for its children. If the deck itself was
+/// started from such a session, each card's agent would think it is a sub-session (and, e.g., stop
+/// saving its transcript). Every card must be an independent top-level session.
+/// shortcut: list taken from one observed parent session; extend if new session-scoped vars appear.
+const INHERITED_SESSION_VARS: [&str; 15] = [
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_AGENT_SDK_VERSION",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_EMIT_STARTUP_TIMING",
+    "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING",
+    "CLAUDE_CODE_QUESTION_PREVIEW_FORMAT",
+    "CLAUDE_CODE_ENABLE_TASKS",
+];
+
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
@@ -58,6 +80,9 @@ pub fn pty_spawn(
     }
     let mut cmd = build_command(&argv)?;
     cmd.cwd(&cwd);
+    for k in INHERITED_SESSION_VARS {
+        cmd.env_remove(k);
+    }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("MYGDECK_ID", &id);
@@ -109,6 +134,12 @@ pub fn pty_resize(ptys: State<Ptys>, id: String, cols: u16, rows: u16) -> Result
     let s = map.get(&id).ok_or("session closed")?;
     let size = PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 };
     s.master.resize(size).map_err(err)
+}
+
+/// Called when the page (re)loads: sessions from a previous page load have no terminal anymore.
+#[tauri::command]
+pub fn pty_reset(ptys: State<Ptys>) {
+    ptys.kill_all();
 }
 
 #[tauri::command]
