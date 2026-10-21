@@ -78,6 +78,8 @@ export class Pty {
   }
 
   received(data) {
+    // During a session rotation the new session's "erase scrollback" must not wipe the old one (spec 4.4).
+    if (this.keepScrollback) data = data.replaceAll("\x1b[3J", "");
     this.term.write(data);
     this.onOutput?.();
   }

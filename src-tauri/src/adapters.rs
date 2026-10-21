@@ -15,6 +15,9 @@ pub struct Adapter {
     pub models: Vec<String>,
     #[serde(default)]
     pub clear_cmd: String,
+    /// Context window in tokens; with hooks the deck rotates the session at 70% of it (spec 4.4). 0 = unknown.
+    #[serde(default)]
+    pub context_limit: u64,
     /// Keys that stop the agent's current work without quitting it (Esc for most agent CLIs).
     #[serde(default = "default_interrupt")]
     pub interrupt: String,

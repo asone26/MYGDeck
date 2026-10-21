@@ -75,7 +75,7 @@ button:hover { border-color: #3a4150; }
 .head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .head .idx { color: var(--muted); }
 .head .name { overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
-.head .agent { color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.head .agent { color: var(--muted); background: var(--raised); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 2px; }
 .head .stext { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .head button { padding: 0 6px; }
 .mods details { border-bottom: 1px solid var(--line); }

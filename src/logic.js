@@ -239,3 +239,24 @@ export function permissionLine(tool, detail) {
 export function basename(p) {
   return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 }
+
+// ---- Infinite session (spec 4.4): memory lives in project files, not in the conversation ----
+
+/** Share of the context window at which the deck rotates, before the agent's own auto-compact. */
+export const ROTATE_AT = 0.7;
+
+/** Turn-end instruction before a new session: write down what the next session needs. */
+export function handoffPrompt(why) {
+  return `[mygdeck] ${why} 새 세션으로 이어가기 전에 .mygdeck/progress.md 를 갱신하세요: 지금까지 한 일, 다음 할 일(- [ ] 체크박스), 중요한 결정 사항. 짧게 쓰고 다른 작업은 하지 마세요.`;
+}
+
+/** First message of the new session: point it at the spec, the work log and recent changes. */
+export function seedPrompt({ mention, spec, hasProgress, changed, lastAsk }) {
+  const lines = ["[mygdeck] 이전 세션에서 이어서 작업합니다. 아래를 읽고 맥락을 복구하세요."];
+  if (spec) lines.push(`- 스펙: ${mentionFor(mention, spec)}`);
+  if (hasProgress) lines.push(`- 진행 기록: ${mentionFor(mention, ".mygdeck/progress.md")}`);
+  if (changed.length) lines.push(`- 최근 변경 파일: ${changed.slice(0, 20).join(", ")}${changed.length > 20 ? ` 외 ${changed.length - 20}개` : ""}`);
+  if (lastAsk) lines.push(`- 사용자의 마지막 요청: "${clip(lastAsk.replace(/\s+/g, " ").trim(), 300)}"`);
+  lines.push("읽은 뒤 지금 상태와 다음 할 일을 3줄 이내로 말하고, 새 작업은 시작하지 말고 지시를 기다리세요.");
+  return lines.join("\n");
+}

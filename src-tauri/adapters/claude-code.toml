@@ -6,6 +6,7 @@ mention = "@{path}"
 model_cmd = "/model {model}"
 models = ["default", "opus", "sonnet", "haiku"]
 clear_cmd = "/clear"
+context_limit = 200000
 status = "hooks"
 commands = [
   "/help", "/clear", "/compact", "/context", "/cost", "/model", "/review", "/init",

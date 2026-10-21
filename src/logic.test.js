@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summarizeTurn, parseProgress, permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename } from "./logic.js";
+import { summarizeTurn, parseProgress, permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "four", "many"]);
@@ -103,4 +103,16 @@ test("paste sequence", () => {
   assert.equal(pasteSequence("a\nb", true), "\x1b[200~a\nb\x1b[201~");
   assert.equal(pasteSequence("a\nb", false), "a\rb");
   assert.equal(basename("C:\\work\\mygstat\\"), "mygstat");
+});
+
+test("seed prompt points the new session at its memory files", () => {
+  const changed = Array.from({ length: 22 }, (_, i) => `f${i}.js`);
+  const p = seedPrompt({ mention: "@{path}", spec: "MASTER SPEC.md", hasProgress: true, changed, lastAsk: "로그인\n고쳐줘" });
+  assert.match(p, /스펙: @"MASTER SPEC\.md"/);
+  assert.match(p, /진행 기록: @\.mygdeck\/progress\.md/);
+  assert.match(p, /f19\.js 외 2개/);
+  assert.match(p, /마지막 요청: "로그인 고쳐줘"/);
+  const bare = seedPrompt({ mention: "", spec: null, hasProgress: false, changed: [], lastAsk: null });
+  assert.equal(bare.split("\n").length, 2);
+  assert.match(handoffPrompt("컨텍스트가 곧 가득 찹니다."), /progress\.md/);
 });

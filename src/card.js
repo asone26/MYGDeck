@@ -5,12 +5,12 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, basename, hookStatus, parseProgress, pasteSequence, projectColor, summarizeTurn } from "./logic.js";
+import { BADGE, MENU, ROTATE_AT, basename, handoffPrompt, hookStatus, parseProgress, pasteSequence, projectColor, seedPrompt, summarizeTurn } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
-  <span class="dot"></span><span class="idx"></span><b class="name"></b><span class="agent"></span>
+  <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
   <button class="b-close" title="닫기 (Alt+W)">×</button>
@@ -25,6 +25,7 @@ const TEMPLATE = `
 <div class="composer"></div>`;
 
 let cardSeq = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** One isolated project: its own agent CLI, files, spec and input (spec 3.0, 3.2). */
 export class Card {
@@ -47,7 +48,7 @@ export class Card {
     this.$ = (sel) => this.el.querySelector(sel);
     this.$(".name").textContent = this.name;
     this.$(".name").title = this.root;
-    this.$(".agent").textContent = adapter?.name ?? (cfg.command ? "custom" : "shell");
+    this.$(".agent").onchange = (e) => this.onAgentPick(e.target.value);
     this.$(".b-close").onclick = () => app.closeCard(this);
     this.$(".b-restart").onclick = () => this.restart();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
@@ -59,6 +60,7 @@ export class Card {
     this.explorer = new Explorer(this, this.$(".explorer"));
     this.viewer = new Viewer(this, this.$(".viewer"));
     this.composer = new Composer(this, this.$(".composer"));
+    this.renderAgentPick();
     this.agent = new Pty(this.$(".term"), {
       cwd: this.root,
       command: this.launchCommand(),
@@ -85,10 +87,26 @@ export class Card {
     this.explorer.refresh();
   }
 
+  /** Crash recovery reuses the rotation path, so the new CLI is seeded with the project's context (spec 5.2). */
   restart() {
     this.$(".b-restart").hidden = true;
-    this.setStatus("starting", "다시 시작");
-    this.agent.start();
+    this.renew();
+  }
+
+  renderAgentPick() {
+    const pick = this.$(".agent");
+    const others = this.app.adapters.filter((a) => a.detected && a.name !== this.adapter?.name);
+    pick.textContent = "";
+    pick.append(new Option(this.adapter?.name ?? (this.cfg.command ? "custom" : "shell"), ""));
+    if (this.adapter) pick.append(new Option("↻ 새 세션으로 이어가기", "@renew"), ...others.map((a) => new Option(`→ ${a.name}(으)로 바꾸기`, a.name)));
+    pick.disabled = !this.adapter;
+  }
+
+  onAgentPick(value) {
+    this.$(".agent").value = "";
+    if (!value) return;
+    const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
+    this.rotate(next, next === this.adapter ? "사용자가 새 세션을 요청했습니다." : `에이전트를 ${next.name}(으)로 바꿉니다.`);
   }
 
   setIndex(i) {
@@ -97,6 +115,7 @@ export class Card {
 
   setStatus(status, text) {
     Object.assign(this, { status, statusText: text });
+    if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
     this.$(".badge").textContent = BADGE[status];
     this.$(".stext").textContent = text;
@@ -175,7 +194,9 @@ export class Card {
     if (this.hooks) {
       if (this.status === "starting") this.setStatus("idle", "준비됨");
     } else if (this.status === "working" || this.status === "starting") {
+      const turnEnded = this.status === "working";
       this.setStatus("idle", "입력 대기 추정");
+      if (turnEnded) this.afterTurn();
     }
   }
 
@@ -213,10 +234,82 @@ export class Card {
       if (turnAtStop !== this.turnSeq) return; // the user already started the next turn
       const turn = this.transcript ? await invoke("read_turn", { path: this.transcript }).catch(() => null) : null;
       this.turn = turn;
+      // The deck's own handoff/seed prompts are not the user's request.
+      if (turn?.prompt && !turn.prompt.includes("[mygdeck]")) this.lastAsk = turn.prompt;
       this.contextTokens = turn?.context_tokens ?? null;
       this.summary = summarizeTurn(turn ?? { texts: [], tools: [] }, progress);
       this.setStatus(this.summary.state, this.summary.line);
     }
+    this.afterTurn();
+  }
+
+  /**
+   * Session rotation (spec 4.4), only ever between turns:
+   * handoff (agent writes progress.md) → its turn ends → renew (clear or relaunch, then seed) → seed turn ends.
+   */
+  afterTurn() {
+    if (this.rotating === "handoff") return this.renew();
+    if (this.rotating === "seed") {
+      this.rotating = null;
+      return this.updateView();
+    }
+    const limit = this.adapter?.context_limit;
+    if (limit && this.contextTokens >= limit * ROTATE_AT) this.rotate(this.adapter, `컨텍스트가 ${Math.round((this.contextTokens / limit) * 100)}% 찼습니다.`);
+  }
+
+  rotate(next, why) {
+    if (this.rotating) return;
+    this.nextAdapter = next;
+    if (!this.agent.alive) return this.renew();
+    this.rotating = "handoff";
+    this.sendToAgent(handoffPrompt(why));
+  }
+
+  /** A new session in the same card: old scrollback stays above a seam line, then the agent is seeded from project files. */
+  async renew() {
+    const next = this.nextAdapter ?? this.adapter;
+    this.nextAdapter = null;
+    this.rotating = "seed";
+    this.transcript = this.contextTokens = null;
+    const t = this.agent.term;
+    // Seam below everything, then scroll the whole old screen into scrollback: on Windows the CLI's clear arrives
+    // as ConPTY repaints at absolute rows, which would overwrite whatever is still on screen.
+    t.write("\x1b[999;1H\r\n\x1b[90m── 세션 이어짐 ──\x1b[0m" + "\r\n".repeat(t.rows - 1));
+    this.agent.keepScrollback = true;
+    if (next === this.adapter && next?.clear_cmd && this.agent.alive) {
+      this.sendToAgent(next.clear_cmd);
+      await sleep(1500);
+    } else {
+      this.agent.kill();
+      this.setAdapter(next);
+      const ready = new Promise((r) => (this.onReady = r));
+      this.setStatus("starting", "새 세션 시작");
+      await this.agent.start();
+      await Promise.race([ready, sleep(20000)]);
+      this.onReady = null;
+    }
+    setTimeout(() => (this.agent.keepScrollback = false), 5000);
+    if (!next || !this.agent.alive) return (this.rotating = null);
+    this.sendToAgent(await this.seed(this.lastAsk));
+  }
+
+  async seed(lastAsk) {
+    const [spec, log, changed] = await Promise.all([
+      invoke("read_spec", { root: this.root, preferred: this.cfg.spec_file ?? null }).catch(() => null),
+      invoke("read_file", { root: this.root, rel: ".mygdeck/progress.md" }).catch(() => null),
+      invoke("git_status", { root: this.root }).catch(() => []),
+    ]);
+    return seedPrompt({ mention: this.adapter.mention, spec: spec?.name, hasProgress: log != null, changed: changed.map((f) => f.path), lastAsk });
+  }
+
+  /** Switch this card's agent CLI; the next start uses it. */
+  setAdapter(a) {
+    if (a === this.adapter) return;
+    this.adapter = a;
+    this.hooks = a?.status === "hooks";
+    this.agent.command = this.launchCommand();
+    this.composer = new Composer(this, this.$(".composer"));
+    this.renderAgentPick();
   }
 
   /** Big picture: the work log if there is one, else the spec's own checklist. */
@@ -232,10 +325,12 @@ export class Card {
   interrupt() {
     if (!this.agent.alive) return;
     this.agent.write(this.adapter?.interrupt || "\x03");
+    this.rotating = null;
     if (this.status === "working" || this.status === "waiting") this.setStatus("idle", "중지함");
   }
 
   onExit(code, err) {
+    this.rotating = null;
     this.setStatus("exited", err ? "실행 실패" : "종료됨");
     this.$(".b-restart").hidden = false;
   }
