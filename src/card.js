@@ -107,7 +107,7 @@ export class Card {
   /** Summary over the CLI when there is a turn to describe; raw CLI otherwise or while a CLI menu is open. */
   updateView() {
     const box = this.$(".summary");
-    const hasTurn = this.hooks && ["working", "waiting", "done", "failed"].includes(this.status);
+    const hasTurn = this.hooks && ["idle", "working", "waiting", "done", "failed"].includes(this.status);
     // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI.
     const menu = this.menuOpen && this.status !== "waiting";
     const show = this.view === "summary" && hasTurn && !menu;

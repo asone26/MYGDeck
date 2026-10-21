@@ -58,6 +58,12 @@ const INHERITED_SESSION_VARS: [&str; 15] = [
     "CLAUDE_CODE_ENABLE_TASKS",
 ];
 
+pub fn is_editor_var(k: &str) -> bool {
+    k.starts_with("VSCODE_")
+        || k.starts_with("CURSOR_")
+        || matches!(k, "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "CLAUDE_CODE_SSE_PORT" | "ENABLE_IDE_INTEGRATION")
+}
+
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
@@ -82,6 +88,13 @@ pub fn pty_spawn(
     cmd.cwd(&cwd);
     for k in INHERITED_SESSION_VARS {
         cmd.env_remove(k);
+    }
+    // An agent started with an editor's environment connects to that editor and receives its
+    // open file and selection. The deck never forwards open files (spec 1.4 ⑧).
+    for (k, _) in std::env::vars() {
+        if is_editor_var(&k) {
+            cmd.env_remove(k);
+        }
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -276,6 +289,12 @@ mod tests {
         assert_eq!(d.push(&bytes[..4]), "가");
         assert_eq!(d.push(&bytes[4..]), "나");
         assert_eq!(d.push(b"ok"), "ok");
+    }
+
+    #[test]
+    fn editor_vars_are_dropped() {
+        assert!(is_editor_var("VSCODE_PID") && is_editor_var("TERM_PROGRAM") && is_editor_var("CLAUDE_CODE_SSE_PORT"));
+        assert!(!is_editor_var("PATH") && !is_editor_var("CLAUDE_CODE_USE_BEDROCK"));
     }
 
     #[test]

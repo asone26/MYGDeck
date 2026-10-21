@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import { permissionLine } from "./logic.js";
 
 const STATE = {
+  idle: ["💬", "준비됨"],
   working: ["⏳", "진행 중"],
   waiting: ["⏸", "대기"],
   done: ["✅", "완료"],
@@ -45,7 +46,10 @@ export function renderSummary(card, box) {
   if (st === "working" && card.turnStart) head.append(el("span", "s-time", minutes(card.turnStart)));
   box.append(head);
 
-  if (st === "working") {
+  if (st === "idle") {
+    box.append(el("div", "s-line", "아래 입력창에 지시를 입력하세요."));
+    box.append(el("div", "s-what", "작업이 시작되면 진행 상황이, 끝나면 결과·근거·다음 할 일이 여기에 표시됩니다."));
+  } else if (st === "working") {
     box.append(el("div", "s-line", card.statusText));
     const steps = el("ul", "s-steps");
     for (const t of card.turnTools.slice(-6)) steps.append(el("li", "", t));
