@@ -3,7 +3,7 @@ import "highlight.js/styles/github-dark.css";
 import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Card } from "./card.js";
 import { ptys } from "./pty.js";
 import { BADGE, DENSITIES, autoLayout, fuzzyFilter, isDeckKey, keyCode, nextAttention, splitDeck } from "./logic.js";
@@ -69,9 +69,9 @@ async function addProject() {
   requestAnimationFrame(() => app.cards.at(-1)?.focusDefault());
 }
 
-function closeCard(card) {
+async function closeCard(card) {
   const busy = card.status === "working" || card.status === "waiting";
-  if (busy && !confirm(`${card.name}: 에이전트가 작업 중입니다. 닫을까요?`)) return;
+  if (busy && !(await ask(`${card.name}: 에이전트가 작업 중입니다. 닫으면 작업이 중단됩니다.`, { title: "프로젝트 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "취소" }))) return;
   const i = app.cards.indexOf(card);
   card.dispose();
   app.cards.splice(i, 1);
@@ -279,6 +279,7 @@ window.addEventListener(
     } else if (k === "ArrowUp" || k === "ArrowDown") c.cycleFocus(k === "ArrowDown" ? 1 : -1);
     else if (k === "KeyI") c.viewer.insertSelection();
     else if (k === "KeyT") c.toggleShell();
+    else if (k === "KeyC") c.toggleView();
     else if (k === "KeyW") closeCard(c);
   },
   true,

@@ -35,7 +35,7 @@ export function projectColor(name, used = []) {
   return colors[h % colors.length];
 }
 
-export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", done: "[v]", exited: "[x]" };
+export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", done: "[v]", failed: "[x]", exited: "[off]" };
 
 const PERMISSION = /permission|approve|허용|승인/i;
 
@@ -47,9 +47,9 @@ export function hookStatus(event, data, current) {
     case "tool":
       return { status: "working", text: toolText(data) };
     case "notify": {
-      const msg = data?.message || "입력 대기";
+      const msg = koMessage(data?.message) || "입력 대기";
       // An idle reminder after the agent finished is not a new request for the user.
-      if (!PERMISSION.test(msg) && current === "done") return null;
+      if (!PERMISSION.test(msg) && (current === "done" || current === "failed")) return null;
       return { status: "waiting", text: msg };
     }
     case "stop":
@@ -57,6 +57,15 @@ export function hookStatus(event, data, current) {
     default:
       return null;
   }
+}
+
+/** Common agent notices in plain Korean; anything unknown is shown as-is. */
+export function koMessage(msg) {
+  if (!msg) return msg;
+  const perm = msg.match(/needs your permission to use (.+?)\.?$/i);
+  if (perm) return `${perm[1]} 사용 허용을 기다립니다`;
+  if (/waiting for your input/i.test(msg)) return "다음 지시를 기다립니다";
+  return msg;
 }
 
 function toolText(d) {
@@ -68,10 +77,10 @@ function toolText(d) {
   return `${tool} ${shown}`;
 }
 
-/** Next other card needing the user: waiting first, then done (spec 3.0 ⑧). -1 if none. */
+/** Next other card needing the user: waiting, then failed, then done (spec 3.0 ⑧). -1 if none. */
 export function nextAttention(statuses, active) {
   const n = statuses.length;
-  for (const want of ["waiting", "done"]) {
+  for (const want of ["waiting", "failed", "done"]) {
     for (let k = 1; k < n; k++) {
       const i = (active + k) % n;
       if (statuses[i] === want) return i;
@@ -131,7 +140,7 @@ export function pasteSequence(text, bracketed) {
 export const DECK_KEYS = new Set([
   "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
   "KeyJ", "KeyO", "Equal", "Minus", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
-  "KeyI", "KeyT", "KeyN", "KeyW",
+  "KeyI", "KeyT", "KeyN", "KeyW", "KeyC",
 ]);
 
 /**
@@ -202,7 +211,7 @@ export function summarizeTurn(turn, progress) {
 
   if (check?.error) {
     s.state = "failed";
-    s.line = `${check.detail} 실패`;
+    s.line = firstSentence(last) || `${check.detail} 실패`;
     s.cause = errorLine(check.error);
     s.next = `${check.detail} 실패 원인을 찾아서 고쳐줘`;
     return s;

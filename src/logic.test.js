@@ -14,7 +14,7 @@ test("shrunk cards move aside, 5+ projects focus on the active one", () => {
 
 test("hook events map to card status", () => {
   assert.equal(hookStatus("tool", { tool: "Edit", detail: "C:/p/src/auth.ts" }, "working").text, "Edit C:/p/src/auth.ts");
-  assert.equal(hookStatus("notify", { message: "Claude needs your permission to use Bash" }, "working").status, "waiting");
+  assert.deepEqual(hookStatus("notify", { message: "Claude needs your permission to use Bash" }, "working"), { status: "waiting", text: "Bash 사용 허용을 기다립니다" });
   assert.equal(hookStatus("notify", { message: "Claude is waiting for your input" }, "done"), null);
   assert.equal(hookStatus("stop", {}, "working").status, "done");
   assert.equal(hookStatus("unknown", {}, "idle"), null);
@@ -23,6 +23,8 @@ test("hook events map to card status", () => {
 test("next attention prefers waiting, wraps around", () => {
   assert.equal(nextAttention(["done", "working", "waiting"], 2), 0);
   assert.equal(nextAttention(["waiting", "done", "waiting"], 0), 2);
+  assert.equal(nextAttention(["done", "failed", "idle"], 2), 1);
+  assert.equal(hookStatus("notify", { message: "Claude is waiting for your input" }, "failed"), null);
   assert.equal(nextAttention(["working", "idle"], 0), -1);
 });
 
@@ -50,7 +52,9 @@ test("summary: failed check gives cause and next step", () => {
   };
   const s = summarizeTurn(turn, null);
   assert.equal(s.state, "failed");
+  assert.equal(s.line, "I updated the login rule.");
   assert.equal(s.cause, "Error: expected false");
+  assert.equal(summarizeTurn({ texts: [], tools: turn.tools }, null).line, "npm test 실패");
   assert.match(s.next, /npm test 실패 원인/);
 });
 

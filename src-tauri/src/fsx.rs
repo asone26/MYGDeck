@@ -161,6 +161,48 @@ pub fn parse_hunks(diff: &str) -> Vec<u32> {
     out
 }
 
+/// Like `git()`, but keeps git's own message for the user when it fails.
+fn run_git(root: &str, args: &[&str]) -> Result<String, String> {
+    let mut c = Command::new("git");
+    c.args(args).current_dir(root);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    let out = c.output().map_err(|e| e.to_string())?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    if out.status.success() { Ok(text) } else { Err(text.trim().to_string()) }
+}
+
+const MARK: &str = "mygdeck";
+
+/// "지금 상태 저장": commit every change as a save point.
+#[tauri::command]
+pub fn git_save(root: String, label: String) -> Result<String, String> {
+    run_git(&root, &["add", "-A"])?;
+    run_git(&root, &["commit", "-m", &format!("{MARK} 저장점: {label}")])
+}
+
+/// "되돌리기": park all changes (untracked files too) in a stash instead of deleting them.
+#[tauri::command]
+pub fn git_park(root: String, label: String) -> Result<String, String> {
+    run_git(&root, &["stash", "push", "--include-untracked", "-m", &format!("{MARK} 되돌리기: {label}")])
+}
+
+/// "되살리기": bring back the most recent change set parked by the deck.
+#[tauri::command]
+pub fn git_unpark(root: String) -> Result<String, String> {
+    let list = run_git(&root, &["stash", "list", "--format=%gd %s"])?;
+    let entry = list
+        .lines()
+        .find(|l| l.contains(&format!("{MARK} 되돌리기")))
+        .and_then(|l| l.split_whitespace().next())
+        .ok_or("되살릴 내용이 없습니다")?
+        .to_string();
+    run_git(&root, &["stash", "pop", &entry])
+}
+
 #[derive(Serialize)]
 pub struct Spec {
     name: String,
@@ -199,6 +241,30 @@ mod tests {
             [("src/a.rs", 'M'), ("new.txt", 'A'), ("gone.rs", 'D'), ("b.rs", 'M'), ("added.rs", 'A')]
                 .map(|(p, c)| (p.to_string(), c))
         );
+    }
+
+    #[test]
+    fn park_and_unpark_keep_changes() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-git-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("a.txt"), "v1").unwrap();
+        git_save(root.clone(), "first".into()).unwrap();
+        std::fs::write(dir.join("a.txt"), "v2").unwrap();
+        std::fs::write(dir.join("new.txt"), "n").unwrap();
+        git_park(root.clone(), "test".into()).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v1");
+        assert!(!dir.join("new.txt").exists());
+        git_unpark(root.clone()).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v2");
+        assert!(dir.join("new.txt").exists());
+        assert!(git_unpark(root.clone()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

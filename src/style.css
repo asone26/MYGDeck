@@ -83,7 +83,8 @@ button:hover { border-color: #3a4150; }
 .kbd { font-size: 11px; opacity: 0.6; margin-left: 4px; }
 .explorer, .spec { max-height: 32vh; overflow: auto; }
 .body { position: relative; flex: 1; min-height: 80px; }
-.term { position: absolute; inset: 0; padding: 4px 0 0 6px; }
+/* z-index 0 isolates xterm's own layers (some use z-index 5+) so the summary on top gets the clicks. */
+.term { position: absolute; inset: 0; z-index: 0; padding: 4px 0 0 6px; }
 .shell { position: relative; flex: none; height: 38%; border-top: 1px solid var(--line); padding: 4px 0 0 6px; }
 .peek {
   display: none; margin: 0; padding: 4px 8px; color: var(--muted); font: 12px/1.4 var(--mono);
@@ -93,10 +94,43 @@ button:hover { border-color: #3a4150; }
 .card[data-density="compact"] .peek { display: block; }
 .card[data-density="mini"] > :not(.head) { display: none !important; }
 
+[data-status="failed"] .cb, .card[data-status="failed"] .badge { color: var(--bad); font-weight: 700; }
+
+/* summary view over the CLI (spec 3.2 ④-1) */
+.summary {
+  position: absolute; inset: 0; z-index: 1; overflow: auto; outline: none;
+  background: var(--panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.s-head { display: flex; align-items: baseline; gap: 10px; }
+.s-state { font-size: 15px; font-weight: 700; }
+.card[data-status="failed"] .s-state { color: var(--bad); }
+.card[data-status="waiting"] .s-state { color: var(--warn); }
+.card[data-status="working"] .s-state { color: var(--work); }
+.card[data-status="done"] .s-state { color: var(--ok); }
+.s-time, .s-what, .s-big { color: var(--muted); }
+.s-line { font-size: 14px; line-height: 1.5; }
+.s-line.clickable { cursor: pointer; }
+.s-line.clickable:hover { text-decoration: underline dotted; }
+.s-steps { margin: 0; padding-left: 18px; color: var(--muted); font: 12px/1.6 var(--mono); }
+.s-proof.ok { color: var(--ok); }
+.s-proof.warn { color: var(--warn); }
+.s-cause { color: var(--bad); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; }
+.s-next { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--raised); }
+.s-next span { flex: 1; min-width: 160px; }
+.s-next button.ok, .s-acts button.ok { border-color: var(--pc); color: var(--fg); }
+.s-acts { display: flex; gap: 6px; margin-top: 2px; }
+.s-acts button { font-size: 12px; color: var(--muted); }
+.s-answer { border-top: 1px solid var(--line); padding-top: 8px; line-height: 1.55; }
+.s-answer pre { overflow: auto; background: var(--bg); padding: 6px 8px; border-radius: 6px; font: 12px/1.4 var(--mono); }
+.s-answer code { font-family: var(--mono); }
+
 /* explorer */
 .xbar { display: flex; gap: 4px; padding: 4px 8px; }
 .xbar button { padding: 1px 8px; font-size: 12px; }
 .xbar button.on { border-color: var(--pc); }
+.xbar .sp { flex: 1; }
+.xmsg { padding: 2px 8px 4px; color: var(--ok); font-size: 12px; }
+.xmsg.bad { color: var(--bad); }
 .xn { padding: 2px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 12px/1.5 var(--mono); }
 .xn:hover { background: var(--raised); }
 .xn.dir::before { content: "▸ "; color: var(--muted); }

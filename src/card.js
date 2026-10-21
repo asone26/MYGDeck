@@ -5,7 +5,8 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, basename, hookStatus, pasteSequence, projectColor } from "./logic.js";
+import { BADGE, MENU, basename, hookStatus, parseProgress, pasteSequence, projectColor, summarizeTurn } from "./logic.js";
+import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
@@ -18,7 +19,7 @@ const TEMPLATE = `
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>스펙 <span class="spec-name"></span></summary><div class="spec md"></div></details>
 </div>
-<div class="body"><div class="term"></div><div class="viewer" hidden></div></div>
+<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>`;
@@ -34,6 +35,10 @@ export class Card {
     this.hooks = adapter?.status === "hooks";
     this.files = null;
     this.peek = [];
+    this.view = "summary"; // preferred view; the raw CLI still shows when there is nothing to summarize
+    this.turnTools = [];
+    this.answerOpen = false;
+    this.menuOpen = false;
     this.el = document.createElement("section");
     this.el.className = "card";
     this.el.style.setProperty("--pc", this.color);
@@ -59,6 +64,10 @@ export class Card {
       onOutput: () => this.onOutput(),
       onExit: (code, err) => this.onExit(code, err),
     });
+    const summary = this.$(".summary");
+    summary.addEventListener("keydown", (e) => e.key === "Enter" && e.target === summary && this.toggleAnswer());
+    // Keep "N분째" fresh while the agent works.
+    this.clock = setInterval(() => this.status === "working" && this.updateView(), 20000);
     this.setDensity("full");
     this.setStatus("starting", "시작 중");
   }
@@ -91,7 +100,44 @@ export class Card {
     this.$(".badge").textContent = BADGE[status];
     this.$(".stext").textContent = text;
     this.$(".stext").title = text;
+    this.updateView();
     this.app.renderStrip();
+  }
+
+  /** Summary over the CLI when there is a turn to describe; raw CLI otherwise or while a CLI menu is open. */
+  updateView() {
+    const box = this.$(".summary");
+    const hasTurn = this.hooks && ["working", "waiting", "done", "failed"].includes(this.status);
+    // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI.
+    const menu = this.menuOpen && this.status !== "waiting";
+    const show = this.view === "summary" && hasTurn && !menu;
+    const wasFocused = box.contains(document.activeElement);
+    box.hidden = !show;
+    if (show) renderSummary(this, box);
+    if (wasFocused && show) box.focus();
+    this.updatePeek();
+  }
+
+  get summaryShown() {
+    return !this.$(".summary").hidden;
+  }
+
+  toggleView() {
+    this.view = this.view === "summary" ? "cli" : "summary";
+    this.updateView();
+    if (this.summaryShown) this.$(".summary").focus();
+    else this.agent.term.focus();
+  }
+
+  toggleAnswer() {
+    this.answerOpen = !this.answerOpen;
+    this.updateView();
+  }
+
+  /** Claude's permission menu: Enter takes the highlighted "Yes", Esc rejects. */
+  answerPermission(allow) {
+    this.agent.write(allow ? "\r" : "\x1b");
+    this.setStatus("working", allow ? "허용함 · 계속 진행" : "거부함");
   }
 
   setDensity(d) {
@@ -111,7 +157,11 @@ export class Card {
     if (!this.peekTimer) {
       this.peekTimer = setTimeout(() => {
         this.peekTimer = null;
-        this.updatePeek();
+        const menu = MENU.test(this.agent.lastLines(8).join("\n"));
+        if (menu !== this.menuOpen) {
+          this.menuOpen = menu;
+          this.updateView();
+        } else this.updatePeek();
         this.app.onPeek(this);
       }, 500);
     }
@@ -127,9 +177,32 @@ export class Card {
   }
 
   onHook(event, data) {
+    if (data?.transcript) this.transcript = data.transcript;
+    if (event === "prompt") {
+      this.turnTools = [];
+      this.turnStart = Date.now();
+      this.answerOpen = false;
+    }
+    if (event === "tool") {
+      this.lastTool = data;
+      this.turnTools.push(hookStatus("tool", data).text);
+    }
+    if (event === "stop") {
+      this.onFsChange();
+      return this.finishTurn();
+    }
     const s = hookStatus(event, data, this.status);
     if (s) this.setStatus(s.status, s.text);
-    if (event === "stop") this.onFsChange();
+  }
+
+  /** Turn finished: read what the agent did from its transcript and summarize it. */
+  async finishTurn() {
+    const turn = this.transcript ? await invoke("read_turn", { path: this.transcript }).catch(() => null) : null;
+    const progress = await invoke("read_file", { root: this.root, rel: ".mygdeck/progress.md" }).catch(() => null);
+    this.turn = turn;
+    this.contextTokens = turn?.context_tokens ?? null;
+    this.summary = summarizeTurn(turn ?? { texts: [], tools: [] }, parseProgress(progress));
+    this.setStatus(this.summary.state, this.summary.line);
   }
 
   onExit(code, err) {
@@ -138,7 +211,8 @@ export class Card {
   }
 
   updatePeek() {
-    this.peek = this.agent?.lastLines(3) ?? [];
+    if (!this.agent) return;
+    this.peek = summaryLines(this) ?? this.agent.lastLines(3);
     this.$(".peek").textContent = this.peek.join("\n") || this.statusText || "";
   }
 
@@ -189,7 +263,8 @@ export class Card {
   }
 
   focusDefault() {
-    if (this.density === "full" && !this.viewer.isOpen) this.agent.term.focus();
+    // With the summary on top, keystrokes must not go to a hidden CLI.
+    if (this.density === "full" && !this.viewer.isOpen && !this.summaryShown) this.agent.term.focus();
     else this.composer.focus();
   }
 
@@ -201,6 +276,7 @@ export class Card {
   }
 
   dispose() {
+    clearInterval(this.clock);
     this.agent.dispose();
     this.shell?.dispose();
     invoke("unwatch_project", { id: this.id }).catch(() => {});
