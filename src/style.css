@@ -41,7 +41,8 @@ button:hover { border-color: #3a4150; }
 }
 .logo { font-weight: 700; letter-spacing: 0.5px; }
 #count, .keys { color: var(--muted); white-space: nowrap; }
-#chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+#chips { display: flex; gap: 6px; overflow-x: auto; flex: 0 1 auto; min-width: 0; scrollbar-width: none; }
+.keys { margin-left: auto; }
 .chip { display: flex; align-items: center; gap: 6px; white-space: nowrap; max-width: 340px; border-color: transparent; }
 .chip.on { border-color: var(--pc); }
 .chip .ct { color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
@@ -101,6 +102,7 @@ button:hover { border-color: #3a4150; }
   position: absolute; inset: 0; z-index: 1; overflow: auto; outline: none;
   background: var(--panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
 }
+.s-loading { margin: auto; color: var(--muted); font-size: 14px; }
 .s-head { display: flex; align-items: baseline; gap: 10px; }
 .s-state { font-size: 15px; font-weight: 700; }
 .card[data-status="failed"] .s-state { color: var(--bad); }
@@ -114,14 +116,15 @@ button.stop { border-color: var(--bad); color: var(--bad); }
 .s-line.clickable { cursor: pointer; }
 .s-line.clickable:hover { text-decoration: underline dotted; }
 .s-steps { margin: 0; padding-left: 18px; color: var(--muted); font: 12px/1.6 var(--mono); }
-.s-proof.ok { color: var(--ok); }
-.s-proof.warn { color: var(--warn); }
 .s-cause { color: var(--bad); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; }
 .s-next { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--raised); }
 .s-next span { flex: 1; min-width: 160px; }
 .s-next button.ok, .s-acts button.ok { border-color: var(--pc); color: var(--fg); }
 .s-acts { display: flex; gap: 6px; margin-top: 2px; }
 .s-acts button { font-size: 12px; color: var(--muted); }
+.s-hist-title { color: var(--muted); font-size: 12px; margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.s-hist > summary { cursor: pointer; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-hist[open] > summary { color: inherit; }
 .s-answer { border-top: 1px solid var(--line); padding-top: 8px; line-height: 1.55; }
 .s-answer pre { overflow: auto; background: var(--bg); padding: 6px 8px; border-radius: 6px; font: 12px/1.4 var(--mono); }
 .s-answer code { font-family: var(--mono); }
@@ -202,5 +205,4 @@ button.stop { border-color: var(--bad); color: var(--bad); }
 .tp { margin: 0; color: var(--muted); font: 12px/1.4 var(--mono); white-space: pre-wrap; max-height: 5.6em; overflow: hidden; }
 
 #empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 15px; }
-#empty button { font-size: 14px; padding: 8px 16px; }
 .fatal { color: var(--bad); padding: 12px; white-space: pre-wrap; }

@@ -38,6 +38,7 @@ pub fn run() {
             fsx::git_save,
             fsx::git_park,
             fsx::git_unpark,
+            fsx::save_paste,
             turn::read_turn,
             watch::watch_project,
             watch::unwatch_project,

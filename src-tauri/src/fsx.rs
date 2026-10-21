@@ -220,6 +220,21 @@ pub fn read_spec(root: String, preferred: Option<String>) -> Option<Spec> {
     None
 }
 
+/// Save a pasted image to the temp folder and return its path, so any agent can read it as a file.
+/// shortcut: bytes arrive as a JSON number array, fine for screenshots; use a raw IPC body if big images get slow.
+#[tauri::command]
+pub fn save_paste(bytes: Vec<u8>, ext: String) -> Result<String, String> {
+    if ext.is_empty() || ext.len() > 5 || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("bad image type".into());
+    }
+    let dir = std::env::temp_dir().join("mygdeck-paste");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_millis();
+    let path = dir.join(format!("paste-{ms}.{ext}"));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

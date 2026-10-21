@@ -1,3 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
+import { message } from "@tauri-apps/plugin-dialog";
+
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
 export class Composer {
   constructor(card, el) {
@@ -12,7 +15,7 @@ export class Composer {
     el.querySelector(".ptag").textContent = card.name;
     this.ta = el.querySelector("textarea");
     this.ta.placeholder = `${card.name}에게 지시 · / 명령`;
-    this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일";
+    this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)";
     this.slash = el.querySelector(".slash");
     this.sel = 0;
 
@@ -27,6 +30,15 @@ export class Composer {
     this.ta.addEventListener("keydown", (e) => this.onKey(e));
     this.ta.addEventListener("input", () => this.update());
     el.querySelector(".send").onclick = () => this.send();
+    this.ta.addEventListener("paste", (e) => {
+      const file = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
+      if (!file) return; // plain text pastes as usual
+      e.preventDefault();
+      file.arrayBuffer()
+        .then((buf) => invoke("save_paste", { bytes: Array.from(new Uint8Array(buf)), ext: file.type.split("/")[1].replace("jpeg", "jpg") }))
+        .then((path) => this.insert(path))
+        .catch((err) => message(`이미지 붙여넣기 실패: ${err}`, { kind: "error" }));
+    });
     el.addEventListener("dragover", (e) => e.preventDefault());
     el.addEventListener("drop", (e) => {
       e.preventDefault();

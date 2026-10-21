@@ -37,6 +37,7 @@ export class Card {
     this.peek = [];
     this.view = "summary"; // preferred view; the raw CLI still shows when there is nothing to summarize
     this.turnTools = [];
+    this.history = []; // finished turns, newest first; shortcut: memory only, lost on restart
     this.answerOpen = false;
     this.menuOpen = false;
     this.el = document.createElement("section");
@@ -105,16 +106,17 @@ export class Card {
     this.app.renderStrip();
   }
 
-  /** Summary over the CLI when there is a turn to describe; raw CLI otherwise or while a CLI menu is open. */
+  /** In summary mode the summary always covers the CLI; only agents without hooks show the raw CLI. */
   updateView() {
     const box = this.$(".summary");
-    const hasTurn = this.hooks && ["idle", "working", "waiting", "done", "failed"].includes(this.status);
-    // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI.
-    const menu = this.menuOpen && this.status !== "waiting";
-    const show = this.view === "summary" && hasTurn && !menu;
+    const hasTurn = this.hooks && this.status !== "starting";
+    // While the CLI boots, cover its raw startup output with a loading screen.
+    const loading = this.view === "summary" && this.status === "starting";
+    const show = (this.view === "summary" && hasTurn) || loading;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
-    if (show) renderSummary(this, box);
+    if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
+    else if (show) renderSummary(this, box);
     if (wasFocused && show) box.focus();
     this.updatePeek();
   }
@@ -184,6 +186,8 @@ export class Card {
       this.turnTools = [];
       this.turnStart = Date.now();
       this.answerOpen = false;
+      if (this.summary) this.history.unshift({ summary: this.summary, turn: this.turn });
+      this.summary = this.turn = null;
     }
     if (event === "tool") {
       this.lastTool = data;

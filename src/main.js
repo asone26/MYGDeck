@@ -36,7 +36,6 @@ async function boot() {
   await listen("agent-hook", (e) => app.cards.find((c) => c.agent.id === e.payload.id)?.onHook(e.payload.event, e.payload.data));
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
   $("add-btn").onclick = addProject;
-  $("empty-add").onclick = addProject;
   for (const p of loaded.config.projects) addCard(p, false);
   app.active = 0;
   layout();

@@ -8,6 +8,7 @@ const STATE = {
   waiting: ["⏸", "대기"],
   done: ["✅", "완료"],
   failed: ["❌", "실패"],
+  exited: ["⏹", "종료됨"],
 };
 
 function el(tag, cls, text) {
@@ -45,18 +46,21 @@ export function renderSummary(card, box) {
   head.append(el("span", "s-state", `${icon} ${label}`));
   if (st === "working" && card.turnStart) head.append(el("span", "s-time", minutes(card.turnStart)));
   box.append(head);
+  // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
+  if (card.menuOpen && st !== "waiting") {
+    const menu = el("div", "s-next");
+    menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Alt+C)", () => card.toggleView(), "ok"));
+    box.append(menu);
+  }
 
   if (st === "idle") {
     box.append(el("div", "s-line", "아래 입력창에 지시를 입력하세요."));
-    box.append(el("div", "s-what", "작업이 시작되면 진행 상황이, 끝나면 결과·근거·다음 할 일이 여기에 표시됩니다."));
+    box.append(el("div", "s-what", "작업이 시작되면 진행 상황이, 끝나면 결과·다음 할 일이 여기에 표시됩니다."));
   } else if (st === "working") {
     box.append(el("div", "s-line", card.statusText));
     const steps = el("ul", "s-steps");
     for (const t of card.turnTools.slice(-6)) steps.append(el("li", "", t));
     box.append(steps);
-    const stop = el("div", "s-next");
-    stop.append(el("span", "", "멈추고 싶으면 중지하세요. 지금까지 한 작업은 남습니다."), button("중지 (Alt+X)", () => card.interrupt(), "stop"));
-    box.append(stop);
   } else if (st === "waiting") {
     box.append(el("div", "s-line", card.statusText));
     const next = el("div", "s-next");
@@ -66,6 +70,8 @@ export function renderSummary(card, box) {
       button("거부", () => card.answerPermission(false)),
     );
     box.append(next);
+  } else if (st === "exited") {
+    box.append(el("div", "s-line", card.statusText));
   } else if (s) {
     if (s.ask) box.append(el("div", "s-ask", `요청: ${s.ask}`));
     const line = el("div", "s-line clickable", s.line);
@@ -73,7 +79,6 @@ export function renderSummary(card, box) {
     line.onclick = () => card.toggleAnswer();
     box.append(line);
     if (s.what) box.append(el("div", "s-what", s.what));
-    if (s.proof) box.append(el("div", s.proof.ok ? "s-proof ok" : "s-proof warn", `근거: ${s.proof.text}`));
     if (s.cause) box.append(el("div", "s-cause", `원인: ${s.cause}`));
     if (s.big) box.append(el("div", "s-big", s.big));
     if (s.next) {
@@ -88,12 +93,26 @@ export function renderSummary(card, box) {
   acts.append(button("CLI 보기 (Alt+C)", () => card.toggleView()));
   box.append(acts);
 
-  if (card.answerOpen && card.turn?.texts?.length) {
-    const ans = el("div", "s-answer md");
-    ans.innerHTML = DOMPurify.sanitize(marked.parse(card.turn.texts.join("\n\n")));
-    ans.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
-    box.append(ans);
+  if (card.answerOpen && card.turn?.texts?.length) box.append(answer(card.turn.texts));
+
+  if (card.history.length) box.append(el("div", "s-hist-title", "이전 작업"));
+  for (const h of card.history) {
+    const d = el("details", "s-hist");
+    d.open = !!h.open;
+    d.ontoggle = () => (h.open = d.open);
+    const s = h.summary;
+    d.append(el("summary", "", `${STATE[s.state]?.[0] ?? ""} ${s.ask ? `${s.ask} → ` : ""}${s.line}`));
+    if (s.cause) d.append(el("div", "s-cause", `원인: ${s.cause}`));
+    if (h.turn?.texts?.length) d.append(answer(h.turn.texts));
+    box.append(d);
   }
+}
+
+function answer(texts) {
+  const ans = el("div", "s-answer md");
+  ans.innerHTML = DOMPurify.sanitize(marked.parse(texts.join("\n\n")));
+  ans.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
+  return ans;
 }
 
 /** Short lines for compact cards, the side column and the overview. */
@@ -102,7 +121,7 @@ export function summaryLines(card) {
   if (card.status === "working") return [card.statusText, ...card.turnTools.slice(-2)];
   if (card.status === "waiting") return [card.statusText, permissionLine(card.lastTool?.tool, card.lastTool?.detail)];
   if (s && (card.status === "done" || card.status === "failed")) {
-    return [s.line, s.cause ? `원인: ${s.cause}` : s.proof ? `근거: ${s.proof.text}` : "", s.next ? `다음: ${s.next}` : ""].filter(Boolean);
+    return [s.line, s.cause ? `원인: ${s.cause}` : "", s.next ? `다음: ${s.next}` : ""].filter(Boolean);
   }
   return null;
 }
