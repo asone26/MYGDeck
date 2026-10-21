@@ -4,5 +4,6 @@ import { defineConfig } from "vite";
 export default defineConfig({
   clearScreen: false,
   server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
-  build: { target: "es2022" },
+  // Assets load from local disk, not the network; the main chunk is mostly xterm, needed at startup.
+  build: { target: "es2022", chunkSizeWarningLimit: 800 },
 });

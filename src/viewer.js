@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import hljs from "highlight.js/lib/common";
 import { lineRange, mentionFor } from "./logic.js";
+
+// Syntax highlighting is the largest dependency; load it only when a file is first opened.
+let hljsLoad = null;
+const loadHljs = () => (hljsLoad ??= import("highlight.js/lib/common").then((m) => m.default));
 
 const HIGHLIGHT_LIMIT = 300_000;
 
@@ -49,11 +52,12 @@ export class Viewer {
     const top = this.body.scrollTop;
     const { root } = this.card;
     try {
-      const [text, changed] = await Promise.all([
+      const [text, changed, hljs] = await Promise.all([
         invoke("read_file", { root, rel: this.rel }),
         invoke("changed_lines", { root, rel: this.rel }).catch(() => ({ all: false, lines: [] })),
+        loadHljs(),
       ]);
-      this.render(text, changed);
+      this.render(text, changed, hljs);
     } catch (e) {
       this.code.textContent = `열 수 없습니다: ${e}`;
       this.gutter.textContent = "";
@@ -61,7 +65,7 @@ export class Viewer {
     this.body.scrollTop = keepScroll ? top : 0;
   }
 
-  render(text, changed) {
+  render(text, changed, hljs) {
     const ext = this.rel.split(".").pop().toLowerCase();
     if (hljs.getLanguage(ext) && text.length < HIGHLIGHT_LIMIT) {
       this.code.innerHTML = hljs.highlight(text, { language: ext, ignoreIllegals: true }).value;
