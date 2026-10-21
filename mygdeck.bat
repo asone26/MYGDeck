@@ -11,7 +11,7 @@ set "EXE=%ROOT%src-tauri\target\release\mygdeck.exe"
 
 if /i "%~1"=="rebuild" (
   call :build || goto :fail
-  start "" "%EXE%"
+  start "" wscript.exe "%ROOT%mygdeck.vbs"
   exit /b 0
 )
 if not exist "%EXE%" (
@@ -19,7 +19,8 @@ if not exist "%EXE%" (
   call :build || goto :fail
 )
 
-start "" "%EXE%" %*
+rem 실제 실행은 mygdeck.vbs가 맡는다 (콘솔 창 없이 열림).
+start "" wscript.exe "%ROOT%mygdeck.vbs" %*
 exit /b 0
 
 :build
