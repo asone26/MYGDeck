@@ -45,10 +45,14 @@ fn read(path: &PathBuf) -> Option<Config> {
     serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
+pub fn source_path() -> PathBuf {
+    let local = std::env::current_dir().unwrap_or_default().join("mygdeck.json");
+    if local.is_file() { local } else { home().join("mygdeck.json") }
+}
+
 #[tauri::command]
 pub fn load_config() -> Loaded {
-    let local = std::env::current_dir().unwrap_or_default().join("mygdeck.json");
-    let source = if local.is_file() { local } else { home().join("mygdeck.json") };
+    let source = source_path();
     let mut config = read(&source).unwrap_or_default();
     // Only existing folders count: launchers such as `tauri dev` append their own flags and values.
     let args: Vec<String> = std::env::args().skip(1).map(|a| expand(&a)).filter(|a| std::path::Path::new(a).is_dir()).collect();

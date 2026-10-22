@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Card } from "./card.js";
+import { openConnections, refreshPool } from "./connections.js";
 import { ptys } from "./pty.js";
 import { BADGE, DENSITIES, autoLayout, fuzzyFilter, isDeckKey, keyCode, nextAttention, splitDeck } from "./logic.js";
 
@@ -35,7 +36,13 @@ async function boot() {
   await listen("pty-exit", (e) => ptys.get(e.payload.id)?.exited(e.payload.code));
   await listen("agent-hook", (e) => app.cards.find((c) => c.agent.id === e.payload.id)?.onHook(e.payload.event, e.payload.data));
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
+  refreshPool();
   $("add-btn").onclick = addProject;
+  $("conn-btn").onclick = () => {
+    overlayKind = "connections";
+    overlay.hidden = false;
+    openConnections(overlay);
+  };
   for (const p of loaded.config.projects) addCard(p, false);
   app.active = 0;
   layout();

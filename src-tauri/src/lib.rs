@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod ai;
 pub mod config;
 pub mod fsx;
 pub mod hooks;
@@ -23,6 +24,12 @@ pub fn run() {
             config::load_config,
             config::save_config,
             adapters::list_adapters,
+            ai::ai_list,
+            ai::ai_save,
+            ai::ai_delete,
+            ai::ai_test,
+            ai::ai_ask,
+            ai::ai_detect,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

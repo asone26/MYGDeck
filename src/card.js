@@ -21,6 +21,7 @@ const TEMPLATE = `
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden></div>
+<div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>`;
 
@@ -248,6 +249,16 @@ export class Card {
    * handoff (agent writes progress.md) → its turn ends → renew (clear or relaunch, then seed) → seed turn ends.
    */
   afterTurn() {
+    if (this.pendingNote) {
+      const note = this.pendingNote;
+      this.pendingNote = null;
+      this.sendToAgent(note);
+    }
+    if (this.revertModel) {
+      this.revertModel = false;
+      const a = this.adapter;
+      if (a?.base_model) this.sendToAgent(a.model_cmd.replace("{model}", a.base_model));
+    }
     if (this.rotating === "handoff") return this.renew();
     if (this.rotating === "seed") {
       this.rotating = null;
@@ -363,6 +374,25 @@ export class Card {
   async fileList() {
     if (!this.files) this.files = await invoke("list_files", { root: this.root }).catch(() => []);
     return this.files;
+  }
+
+  /** Answer slot above the input: a pool answer stays out of the agent's context until the user forwards it (spec 4.2). */
+  showAnswer(question, text, via) {
+    const qa = this.$(".qa");
+    qa.hidden = false;
+    qa.innerHTML = `<div class="qa-h"><b></b><span class="muted"></span><span class="sp"></span><button class="fw">에이전트에게 전달</button><button class="x">×</button></div><div class="qa-b md"></div>`;
+    qa.querySelector("b").textContent = question.length > 60 ? question.slice(0, 60) + "…" : question;
+    qa.querySelector(".muted").textContent = via ? `${via} · 실시간 검색 없이 답함` : "";
+    qa.querySelector(".qa-b").innerHTML = DOMPurify.sanitize(marked.parse(text));
+    qa.querySelector(".x").onclick = () => (qa.hidden = true);
+    qa.querySelector(".fw").onclick = (e) => {
+      const note = `참고 (질문 답변): ${text.slice(0, 1500)}`;
+      const busy = this.status === "working" || this.status === "waiting";
+      // Mid-turn the text would land in the wrong prompt: hold it until the turn ends.
+      if (busy) this.pendingNote = note;
+      else this.sendToAgent(note);
+      e.target.textContent = busy ? "턴 종료 후 전달됨 ✓" : "전달함 ✓";
+    };
   }
 
   /** Type text into the CLI exactly as if the user typed it, then press Enter. */

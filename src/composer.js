@@ -1,13 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "@tauri-apps/plugin-dialog";
+import { poolReady } from "./connections.js";
+import { ROUTE_CHIP, nextRoute, routeInput } from "./logic.js";
 
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
 export class Composer {
   constructor(card, el) {
     this.card = card;
+    this.el = el;
     const a = card.adapter;
     el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select>
-      <div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
+      <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
       <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>
       <button class="send" title="전송 (Enter)">↵</button>`;
     this.stopBtn = el.querySelector(".stop");
@@ -22,7 +25,7 @@ export class Composer {
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
       select.append(new Option("모델", ""), ...a.models.map((m) => new Option(m, m)));
-      select.onchange = () => select.value && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
+      select.onchange = () => select.value && (card.userModel = true) && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
     } else {
       select.hidden = true;
     }
@@ -61,6 +64,10 @@ export class Composer {
         this.slash.hidden = true;
         return;
       }
+    }
+    if (e.key === "Tab" && !e.shiftKey && !this.ta.value && this.last) {
+      e.preventDefault();
+      return this.resend();
     }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -123,12 +130,61 @@ export class Composer {
     this.update();
   }
 
+  /** Paths the deck can reach today: the agent, plus a model switch if the adapter has one (spec 4.3). */
+  reachable() {
+    const a = this.card.adapter;
+    const list = ["code"];
+    if (a?.model_cmd && a.deep_model && !this.card.userModel) list.push("deep");
+    if (poolReady()) list.push("ask");
+    return list;
+  }
+
   send() {
     const text = this.ta.value.replace(/\s+$/, "");
     if (!text.trim()) return;
-    this.card.sendToAgent(text);
+    const r = routeInput(text);
+    // Search, cheap and ?? all go to the free pool when one is set up (4.5); without it they go to the agent.
+    const pooled = ["ask", "search", "cheap"].includes(r.route);
+    const route = r.route === "cli" ? "cli" : pooled && poolReady() ? "ask" : this.reachable().includes(r.route) ? r.route : "code";
+    this.last = { text: r.route === "ask" ? text : r.text, route, shown: r.route };
+    this.dispatch(route, this.last.text);
     this.ta.value = "";
     this.update();
+  }
+
+  dispatch(route, text) {
+    const card = this.card;
+    const chip = this.el.querySelector(".route");
+    chip.textContent = ROUTE_CHIP[this.last.shown] + (this.last.shown !== route && route !== "cli" ? ` → ${ROUTE_CHIP[route]}` : "");
+    chip.hidden = route === "cli";
+    chip.title = "Tab: 다른 경로로 다시 보내기";
+    if (route === "ask") {
+      chip.textContent = "💬 free pool…";
+      invoke("ai_ask", { prompt: text })
+        .then((a) => {
+          chip.textContent = `💬 ${a.via}`;
+          card.showAnswer(text, a.text, a.via);
+        })
+        .catch((err) => {
+          chip.textContent = "💬 실패";
+          card.showAnswer(text, `**답변 실패:** ${err}`, "");
+        });
+    } else if (route === "deep") {
+      const a = card.adapter;
+      card.sendToAgent(a.model_cmd.replace("{model}", a.deep_model));
+      card.revertModel = true;
+      setTimeout(() => card.sendToAgent(text), 600);
+    } else card.sendToAgent(text);
+  }
+
+  /** Tab on an empty box: the last input again, down the other path (stops the first attempt). */
+  resend() {
+    const l = this.last;
+    const next = nextRoute(l.route, this.reachable());
+    if (next === l.route) return;
+    this.card.interrupt();
+    this.last = { ...l, route: next, shown: next };
+    setTimeout(() => this.dispatch(next, l.text), 300);
   }
 
   focus() {

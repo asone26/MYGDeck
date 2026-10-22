@@ -116,3 +116,16 @@ test("seed prompt points the new session at its memory files", () => {
   assert.equal(bare.split("\n").length, 2);
   assert.match(handoffPrompt("컨텍스트가 곧 가득 찹니다."), /progress\.md/);
 });
+
+test("router: explicit prefixes win, rules pick the rest", async () => {
+  const { routeInput, nextRoute } = await import("./logic.js");
+  assert.equal(routeInput("/model opus").route, "cli");
+  assert.equal(routeInput("!ls").route, "cli");
+  assert.equal(routeInput("?? tauri 단축키?").text, "tauri 단축키?");
+  assert.equal(routeInput("로그인 화면에 토글 추가해").route, "code");
+  assert.equal(routeInput("왜 터미널 출력이 끊기는지 원인 분석해").route, "deep");
+  assert.equal(routeInput("Tauri v2 global shortcut 쓰는 법?").route, "search");
+  assert.equal(routeInput("이 diff 한 줄로 요약해줘").route, "cheap");
+  assert.equal(nextRoute("code", ["code", "deep"]), "deep");
+  assert.equal(nextRoute("deep", ["code", "deep"]), "code");
+});

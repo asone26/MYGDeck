@@ -260,3 +260,18 @@ export function seedPrompt({ mention, spec, hasProgress, changed, lastAsk }) {
   lines.push("읽은 뒤 지금 상태와 다음 할 일을 3줄 이내로 말하고, 새 작업은 시작하지 말고 지시를 기다리세요.");
   return lines.join("\n");
 }
+
+/** Input router (spec 4.3), rules only: which path an input takes. `??`/`/`/`!`/`#` are explicit and skip the rules. */
+export function routeInput(text) {
+  const t = text.trim();
+  if (/^[/!#]/.test(t)) return { route: "cli", text };
+  if (t.startsWith("??")) return { route: "ask", text: t.slice(2).trim() };
+  if (/(원인|왜\s|설계|아키텍처|리팩터링\s*방향|난해|디버깅|root cause|why does|architecture|design)/i.test(t) && !/(추가|만들|구현|고쳐|수정)/.test(t)) return { route: "deep", text };
+  if (/(최신|공식\s*문서|사용법|쓰는\s*법|뭐야|무엇|\?$)/.test(t) && !/(추가|만들|구현|고쳐|수정|해줘|해\s*줘)/.test(t)) return { route: "search", text };
+  if (/(요약|설명해|한\s*줄)/.test(t) && !/(추가|만들|구현|고쳐|수정)/.test(t)) return { route: "cheap", text };
+  return { route: "code", text };
+}
+
+export const ROUTE_CHIP = { cli: "⌨ cli", ask: "?? ask", code: "🛠 code", deep: "🧠 deep", search: "🔍 search", cheap: "💬 cheap" };
+/** Tab cycles the paths the deck can currently reach. */
+export const nextRoute = (route, reachable) => reachable[(reachable.indexOf(route) + 1) % reachable.length];

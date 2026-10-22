@@ -14,6 +14,10 @@ pub struct Adapter {
     #[serde(default)]
     pub models: Vec<String>,
     #[serde(default)]
+    pub deep_model: String,
+    #[serde(default)]
+    pub base_model: String,
+    #[serde(default)]
     pub clear_cmd: String,
     /// Context window in tokens; with hooks the deck rotates the session at 70% of it (spec 4.4). 0 = unknown.
     #[serde(default)]

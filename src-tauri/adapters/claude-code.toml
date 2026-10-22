@@ -13,3 +13,6 @@ commands = [
   "/memory", "/config", "/permissions", "/agents", "/mcp", "/resume", "/rewind",
   "/status", "/doctor", "/exit",
 ]
+# Model the router switches to for design / hard-debugging inputs, and the one it returns to (spec 4.3).
+deep_model = "opus"
+base_model = "default"
