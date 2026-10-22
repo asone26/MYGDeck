@@ -129,3 +129,26 @@ test("router: explicit prefixes win, rules pick the rest", async () => {
   assert.equal(nextRoute("code", ["code", "deep"]), "deep");
   assert.equal(nextRoute("deep", ["code", "deep"]), "code");
 });
+
+test("router: everyday inputs land on the expected path", async () => {
+  const { routeInput } = await import("./logic.js");
+  const cases = [
+    ["로그인 화면에 비밀번호 표시 토글 추가해", "code"],
+    ["package.json 의존성 최신으로 업데이트해줘", "code"],
+    ["src/main.js 읽고 구조 설명해줘", "code"],
+    ["이 코드 왜 느려? 최적화해줘", "code"],
+    ["새 컴포넌트 설계하고 구현해줘", "code"],
+    ["다음으로 뭐하면 좋을까?", "code"],
+    ["이거 어떻게 생각해?", "code"],
+    ["응", "code"],
+    ["왜 터미널 출력이 가끔 끊기는지 원인 분석해", "deep"],
+    ["메모리 누수 원인 찾아줘", "deep"],
+    ["아키텍처 설계해줘", "deep"],
+    ["이 에러 원인이 뭐야? ECONNREFUSED 127.0.0.1", "search"],
+    ["오늘 환율 알려줘", "search"],
+    ["vite 최신 버전이 뭐야", "search"],
+    ["README 요약해줘", "cheap"],
+    ["이 함수 설명해줘", "cheap"],
+  ];
+  for (const [text, want] of cases) assert.equal(routeInput(text).route, want, text);
+});

@@ -261,14 +261,24 @@ export function seedPrompt({ mention, spec, hasProgress, changed, lastAsk }) {
   return lines.join("\n");
 }
 
-/** Input router (spec 4.3), rules only: which path an input takes. `??`/`/`/`!`/`#` are explicit and skip the rules. */
+const ACTION = /(추가|만들|구현|고쳐|수정|최적화|삭제|지워|업데이트|리팩터링해|돌려|실행|커밋|푸시|설치|읽고|열어|바꿔)/;
+const FILE = /[\w./\\-]+\.(js|ts|rs|py|md|json|toml|css|html)\b|\bsrc[/\\]/;
+// Time-sensitive or outside-the-project questions: only a search can answer them. ERRNO: ECONNREFUSED, ENOENT...
+const SEARCH = /(최신|오늘|현재|환율|날씨|뉴스|가격|주가|공식\s*문서|릴리[스즈]|버전|사용법|쓰는\s*(법|방법)|exception|stack ?trace)/i;
+const ERRNO = /\bE[A-Z]{4,}\b/;
+const DEEP = /(원인|설계|아키텍처|난해|디버깅|root cause|why does|architecture)/i;
+const CHEAP = /(요약|설명해|한\s*줄|번역|뜻)/;
+
+/** Input router (spec 4.3), rules only: which path an input takes. `??`/`/`/`!`/`#` are explicit and skip the rules.
+ *  Work on the project (a verb or a file name) always goes to the agent, so only plain questions reach the other paths. */
 export function routeInput(text) {
   const t = text.trim();
   if (/^[/!#]/.test(t)) return { route: "cli", text };
   if (t.startsWith("??")) return { route: "ask", text: t.slice(2).trim() };
-  if (/(원인|왜\s|설계|아키텍처|리팩터링\s*방향|난해|디버깅|root cause|why does|architecture|design)/i.test(t) && !/(추가|만들|구현|고쳐|수정)/.test(t)) return { route: "deep", text };
-  if (/(최신|공식\s*문서|사용법|쓰는\s*법|뭐야|무엇|\?$)/.test(t) && !/(추가|만들|구현|고쳐|수정|해줘|해\s*줘)/.test(t)) return { route: "search", text };
-  if (/(요약|설명해|한\s*줄)/.test(t) && !/(추가|만들|구현|고쳐|수정)/.test(t)) return { route: "cheap", text };
+  if (ACTION.test(t) || FILE.test(t)) return { route: "code", text };
+  if (SEARCH.test(t) || ERRNO.test(t)) return { route: "search", text };
+  if (DEEP.test(t)) return { route: "deep", text };
+  if (CHEAP.test(t)) return { route: "cheap", text };
   return { route: "code", text };
 }
 

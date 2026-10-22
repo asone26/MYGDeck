@@ -14,7 +14,8 @@ const OLLAMA_URL: &str = "http://localhost:11434";
 pub struct Connection {
     pub id: String,
     pub name: String,
-    /// "openai" (any OpenAI-compatible server: OpenAI, Ollama, OpenRouter, Gemini...) or "anthropic".
+    /// "openai" (any OpenAI-compatible server: OpenAI, Ollama, OpenRouter, Gemini...), "anthropic",
+    /// or "search" (Tavily: web search for the question path, never a chat model).
     pub kind: String,
     pub base_url: String,
     #[serde(default)]
@@ -29,6 +30,16 @@ pub struct Listed {
     #[serde(flatten)]
     conn: Connection,
     has_key: bool,
+    /// Free tier or a server on this machine: what the pool may use.
+    pooled: bool,
+}
+
+fn is_chat_pool(c: &Connection) -> bool {
+    c.kind != "search" && (c.free || is_local(c)) && !c.model.is_empty()
+}
+
+fn is_local(c: &Connection) -> bool {
+    c.base_url.contains("://localhost") || c.base_url.contains("://127.0.0.1")
 }
 
 fn entry(id: &str) -> Result<keyring::Entry, String> {
@@ -55,7 +66,7 @@ fn write(mut c: Config, list: &[Connection]) -> Result<(), String> {
 
 #[tauri::command]
 pub fn ai_list() -> Vec<Listed> {
-    conns(&read()).into_iter().map(|conn| Listed { has_key: has_key(&conn.id), conn }).collect()
+    conns(&read()).into_iter().map(|conn| Listed { has_key: has_key(&conn.id), pooled: is_chat_pool(&conn), conn }).collect()
 }
 
 /// Adds or updates a connection. `key` None keeps the stored key; an empty string removes it.
@@ -175,19 +186,84 @@ fn chat(conn: &Connection, key: Option<&str>, prompt: &str) -> Result<String, (D
 }
 
 #[derive(Serialize)]
+pub struct Source {
+    title: String,
+    url: String,
+}
+
+#[derive(Serialize)]
 pub struct Answer {
     text: String,
     via: String,
+    sources: Vec<Source>,
+    searched: bool,
+}
+
+/// Tavily web search; Err((cooldown, message)) like `chat`, so the pool logic can treat a full quota the same way.
+fn search(conn: &Connection, key: &str, query: &str) -> Result<Vec<(Source, String)>, (Duration, String)> {
+    let body = json!({"query": query, "max_results": 5, "search_depth": "basic"});
+    let mut res = agent()
+        .post(format!("{}/search", conn.base_url.trim_end_matches('/')))
+        .header("Authorization", format!("Bearer {key}"))
+        .send_json(body)
+        .map_err(|e| (Duration::from_secs(30), format!("검색 연결 실패: {e}")))?;
+    match res.status().as_u16() {
+        429 | 432 | 433 => return Err((Duration::from_secs(3600), "검색 한도 초과".into())),
+        401 | 403 => return Err((Duration::from_secs(3600), "검색 키가 거부됨".into())),
+        c if c >= 400 => return Err((Duration::from_secs(120), format!("검색 서버 응답 {c}"))),
+        _ => {}
+    }
+    let v: Value = res.body_mut().read_json().map_err(|e| (Duration::from_secs(30), e.to_string()))?;
+    Ok(v["results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let url = r["url"].as_str().filter(|u| u.starts_with("http"))?;
+            let title = r["title"].as_str().unwrap_or(url);
+            let content: String = r["content"].as_str().unwrap_or("").chars().take(700).collect();
+            Some((Source { title: title.into(), url: url.into() }, content))
+        })
+        .collect())
+}
+
+/// Question plus numbered findings; the model must answer from them and cite by number.
+fn with_findings(prompt: &str, hits: &[(Source, String)]) -> String {
+    let found: String = hits.iter().enumerate().map(|(i, (s, c))| format!("[{}] {}
+{c}
+", i + 1, s.title)).collect();
+    format!("아래 웹 검색 결과만 근거로 질문에 답하세요. 근거가 되는 문장 끝에 [번호]를 붙이고, 결과에 없는 내용은 모른다고 답하세요.
+
+검색 결과:
+{found}
+질문: {prompt}")
 }
 
 /// Cheap tasks go to the free connections (those with a key or local, and a model) in order; a full or failing one sits out.
 #[tauri::command]
-pub async fn ai_ask(prompt: String) -> Result<Answer, String> {
+pub async fn ai_ask(prompt: String, search: bool) -> Result<Answer, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let pool: Vec<_> = conns(&read()).into_iter().filter(|c| c.free && !c.model.is_empty()).collect();
+        let all = conns(&read());
+        let pool: Vec<_> = all.iter().filter(|c| is_chat_pool(c)).collect();
         if pool.is_empty() {
             return Err("모델이 지정된 무료 연결이 없습니다. 🔑에서 추가하세요.".to_string());
         }
+        // Web findings first, when asked and a search connection with a key is ready; a failure only means "answered without search".
+        let mut hits = Vec::new();
+        if search {
+            for c in all.iter().filter(|c| c.kind == "search" && cooling(&c.id).is_none()) {
+                let Some(key) = entry(&c.id).ok().and_then(|e| e.get_password().ok()) else { continue };
+                match self::search(c, &key, &prompt.chars().take(400).collect::<String>()) {
+                    Ok(h) => {
+                        hits = h;
+                        break;
+                    }
+                    Err((d, _)) => cool(&c.id, d),
+                }
+            }
+        }
+        let asked = if hits.is_empty() { prompt.clone() } else { with_findings(&prompt, &hits) };
+        let sources = |h: Vec<(Source, String)>| h.into_iter().map(|(s, _)| s).collect::<Vec<_>>();
         let mut last = String::new();
         let mut soonest: Option<Duration> = None;
         for c in pool {
@@ -196,8 +272,11 @@ pub async fn ai_ask(prompt: String) -> Result<Answer, String> {
                 continue;
             }
             let key = entry(&c.id).ok().and_then(|e| e.get_password().ok());
-            match chat(&c, key.as_deref(), &prompt) {
-                Ok(text) => return Ok(Answer { text, via: c.name }),
+            match chat(c, key.as_deref(), &asked) {
+                Ok(text) => {
+                    let searched = !hits.is_empty();
+                    return Ok(Answer { text, via: c.name.clone(), sources: sources(hits), searched });
+                }
                 Err((d, why)) => {
                     cool(&c.id, d);
                     last = format!("{}: {why}", c.name);
@@ -222,6 +301,11 @@ pub async fn ai_test(id: String) -> Result<String, String> {
 fn test(id: String) -> Result<String, String> {
     let conn = conns(&read()).into_iter().find(|x| x.id == id).ok_or("연결을 찾을 수 없습니다.")?;
     let key = entry(&id)?.get_password().ok();
+    if conn.kind == "search" {
+        // One real query (costs one free credit): the only way to prove the key works.
+        let n = search(&conn, key.as_deref().ok_or("키가 없습니다.")?, "tauri").map_err(|(_, m)| m)?.len();
+        return Ok(format!("연결됨 · 검색 결과 {n}건"));
+    }
     let url = format!("{}/models", conn.base_url.trim_end_matches('/'));
     let mut req = ureq::get(&url);
     match (conn.kind.as_str(), &key) {
@@ -249,6 +333,20 @@ mod tests {
         assert_eq!(pick_model(&n(&["nomic-embed-text", "qwen2.5:3b", "exaone3.5:7.8b"])).as_deref(), Some("exaone3.5:7.8b"));
         assert_eq!(pick_model(&n(&["llama3.2:3b"])).as_deref(), Some("llama3.2:3b"));
         assert_eq!(pick_model(&n(&["nomic-embed-text"])), None);
+    }
+
+    #[test]
+    fn findings_are_numbered_into_the_prompt() {
+        let hits = vec![(Source { title: "Doc".into(), url: "https://x.dev".into() }, "내용".to_string())];
+        let p = with_findings("질문?", &hits);
+        assert!(p.contains("[1] Doc") && p.contains("질문: 질문?"));
+    }
+
+    #[test]
+    fn search_connections_stay_out_of_the_chat_pool() {
+        let mk = |kind: &str| Connection { id: "t".into(), name: "t".into(), kind: kind.into(), base_url: "http://localhost:1".into(), model: "m".into(), free: true };
+        assert!(is_chat_pool(&mk("openai")));
+        assert!(!is_chat_pool(&mk("search")));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { Pty } from "./pty.js";
@@ -377,13 +378,35 @@ export class Card {
   }
 
   /** Answer slot above the input: a pool answer stays out of the agent's context until the user forwards it (spec 4.2). */
-  showAnswer(question, text, via) {
+  showAnswer(question, text, via, found = {}) {
     const qa = this.$(".qa");
     qa.hidden = false;
     qa.innerHTML = `<div class="qa-h"><b></b><span class="muted"></span><span class="sp"></span><button class="fw">에이전트에게 전달</button><button class="x">×</button></div><div class="qa-b md"></div>`;
     qa.querySelector("b").textContent = question.length > 60 ? question.slice(0, 60) + "…" : question;
-    qa.querySelector(".muted").textContent = via ? `${via} · 실시간 검색 없이 답함` : "";
-    qa.querySelector(".qa-b").innerHTML = DOMPurify.sanitize(marked.parse(text));
+    const n = found.sources?.length ?? 0;
+    qa.querySelector(".muted").textContent = via ? `${via} · ${found.searched ? `웹 검색 ${n}건 기반` : "실시간 검색 없이 답함"}` : "";
+    const body = qa.querySelector(".qa-b");
+    body.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    // Sources open in the system browser; a link inside the webview would replace the whole app.
+    if (n) {
+      const ol = document.createElement("ol");
+      ol.className = "qa-src";
+      for (const s of found.sources) {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.textContent = s.title;
+        a.title = s.url;
+        a.href = "#";
+        a.onclick = (e) => {
+          e.preventDefault();
+          openUrl(s.url);
+        };
+        li.append(a);
+        ol.append(li);
+      }
+      body.append(ol);
+    }
+    body.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
     qa.querySelector(".x").onclick = () => (qa.hidden = true);
     qa.querySelector(".fw").onclick = (e) => {
       const note = `참고 (질문 답변): ${text.slice(0, 1500)}`;

@@ -219,3 +219,5 @@ button.stop { border-color: var(--bad); color: var(--bad); }
 .qa { border-top: 1px solid var(--line); background: var(--raised); max-height: 35%; overflow: auto; padding: 4px 8px; font-size: 12px; }
 .qa-h { display: flex; align-items: center; gap: 6px; }
 .qa-h .sp { flex: 1; }
+.qa-src { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.qa-src a { color: var(--work); cursor: pointer; }

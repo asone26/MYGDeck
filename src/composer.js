@@ -160,10 +160,10 @@ export class Composer {
     chip.title = "Tab: 다른 경로로 다시 보내기";
     if (route === "ask") {
       chip.textContent = "💬 free pool…";
-      invoke("ai_ask", { prompt: text })
+      invoke("ai_ask", { prompt: text, search: this.last.shown === "search" })
         .then((a) => {
           chip.textContent = `💬 ${a.via}`;
-          card.showAnswer(text, a.text, a.via);
+          card.showAnswer(text, a.text, a.via, a);
         })
         .catch((err) => {
           chip.textContent = "💬 실패";

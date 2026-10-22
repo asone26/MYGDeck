@@ -5,7 +5,7 @@ let pool = false;
 export const poolReady = () => pool;
 export async function refreshPool() {
   await invoke("ai_detect").catch(() => {});
-  pool = (await invoke("ai_list").catch(() => [])).some((c) => c.free && c.model);
+  pool = (await invoke("ai_list").catch(() => [])).some((c) => c.pooled);
 }
 
 /** Presets fill the form; the key is the only thing the user has to type (spec 4.5). */
@@ -15,6 +15,7 @@ const PRESETS = [
   { name: "Anthropic", kind: "anthropic", base_url: "https://api.anthropic.com/v1" },
   { name: "Gemini", kind: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", free: true },
   { name: "OpenRouter", kind: "openai", base_url: "https://openrouter.ai/api/v1" },
+  { name: "Tavily (검색)", kind: "search", base_url: "https://api.tavily.com", free: true },
   { name: "Groq", kind: "openai", base_url: "https://api.groq.com/openai/v1", free: true },
 ];
 
@@ -26,7 +27,7 @@ export async function openConnections(overlay) {
     <form class="cn-form">
       <select name="preset"><option value="">직접 입력</option>${PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join("")}</select>
       <input name="name" placeholder="이름" spellcheck="false" required>
-      <select name="kind"><option value="openai">OpenAI 호환</option><option value="anthropic">Anthropic</option></select>
+      <select name="kind"><option value="openai">OpenAI 호환</option><option value="anthropic">Anthropic</option><option value="search">웹 검색 (Tavily)</option></select>
       <input name="base_url" placeholder="주소 (https://…/v1)" spellcheck="false" required>
       <input name="model" placeholder="모델 (선택)" spellcheck="false">
       <input name="key" type="password" placeholder="API 키 (로컬은 비워둠)" autocomplete="off">
@@ -39,7 +40,7 @@ export async function openConnections(overlay) {
 
   async function draw() {
     const list = await invoke("ai_list");
-    pool = list.some((c) => c.free && c.model);
+    pool = list.some((c) => c.pooled);
     const ul = $(".cn-list");
     ul.textContent = "";
     if (!list.length) ul.innerHTML = `<li class="muted">아직 연결이 없습니다. 아래에서 추가하세요.</li>`;
