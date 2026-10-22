@@ -137,9 +137,8 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cb"></span><span class="ct"></span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="ct"></span>`;
     b.querySelector(".cn").textContent = c.name;
-    b.querySelector(".cb").textContent = BADGE[c.status];
     b.querySelector(".ct").textContent = c.statusText;
     b.onclick = () => setActive(i);
     chips.append(b);

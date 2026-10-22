@@ -20,7 +20,7 @@ const PRESETS = [
 
 /** One place to add, test and remove AI connections. Keys go straight to the OS keychain and are never shown again. */
 export async function openConnections(overlay) {
-  overlay.innerHTML = `<div class="qo cn">
+  overlay.innerHTML = `<div class="qo conn-box">
     <div class="qo-title">AI 연결 · API 키는 OS 키체인에만 저장됩니다</div>
     <ul class="cn-list"></ul>
     <form class="cn-form">
