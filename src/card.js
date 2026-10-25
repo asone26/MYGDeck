@@ -20,7 +20,7 @@ const TEMPLATE = `
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>스펙 <span class="spec-name"></span></summary><div class="spec md"></div></details>
 </div>
-<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
+<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><button class="b-gui" title="요약 화면으로 돌아가기" hidden>요약 보기 (Alt+C)</button><div class="viewer" hidden></div></div>
 <div class="shell" hidden></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
@@ -40,7 +40,6 @@ export class Card {
     this.peek = [];
     this.view = "summary"; // preferred view; the raw CLI still shows when there is nothing to summarize
     this.turnTools = [];
-    this.history = []; // finished turns, newest first; shortcut: memory only, lost on restart
     this.answerOpen = false;
     this.menuOpen = false;
     this.el = document.createElement("section");
@@ -53,6 +52,7 @@ export class Card {
     this.$(".agent").onchange = (e) => this.onAgentPick(e.target.value);
     this.$(".b-close").onclick = () => app.closeCard(this);
     this.$(".b-restart").onclick = () => this.restart();
+    this.$(".b-gui").onclick = () => this.toggleView();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
     const spec = this.$(".m-spec");
     spec.addEventListener("toggle", () => spec.open && this.loadSpec());
@@ -136,6 +136,7 @@ export class Card {
     const show = (this.view === "summary" && hasTurn) || loading;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
+    this.$(".b-gui").hidden = this.view !== "cli" || !this.hooks;
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);
     if (wasFocused && show) box.focus();
@@ -209,7 +210,8 @@ export class Card {
       this.turnTools = [];
       this.turnStart = Date.now();
       this.answerOpen = false;
-      if (this.summary) this.history.unshift({ summary: this.summary, turn: this.turn });
+      // The deck's own handoff/seed prompts are not the user's request.
+      this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
       this.summary = this.turn = null;
     }
     if (event === "tool") {

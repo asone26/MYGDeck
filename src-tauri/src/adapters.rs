@@ -13,6 +13,11 @@ pub struct Adapter {
     pub model_cmd: String,
     #[serde(default)]
     pub models: Vec<String>,
+    /// Reasoning-effort switch command with an {effort} slot; empty hides the effort picker.
+    #[serde(default)]
+    pub effort_cmd: String,
+    #[serde(default)]
+    pub efforts: Vec<String>,
     #[serde(default)]
     pub deep_model: String,
     #[serde(default)]

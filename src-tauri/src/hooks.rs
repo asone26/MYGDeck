@@ -81,6 +81,7 @@ pub fn trim_payload(raw: &str) -> String {
         .find_map(|k| input.and_then(|t| t.get(*k)).filter(|x| x.is_string()));
     json!({
         "message": clip(v.get("message"), 200),
+        "prompt": clip(v.get("prompt"), 300),
         "tool": clip(v.get("tool_name"), 60),
         "detail": clip(detail, 200),
         "transcript": clip(v.get("transcript_path"), 1000),

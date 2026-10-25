@@ -5,11 +5,13 @@ hook_args = "--settings {settings}"
 mention = "@{path}"
 model_cmd = "/model {model}"
 models = ["default", "opus", "sonnet", "haiku"]
+effort_cmd = "/effort {effort}"
+efforts = ["low", "medium", "high", "xhigh", "max"]
 clear_cmd = "/clear"
 context_limit = 200000
 status = "hooks"
 commands = [
-  "/help", "/clear", "/compact", "/context", "/cost", "/model", "/review", "/init",
+  "/help", "/clear", "/compact", "/context", "/cost", "/model", "/effort", "/review", "/init",
   "/memory", "/config", "/permissions", "/agents", "/mcp", "/resume", "/rewind",
   "/status", "/doctor", "/exit",
 ]

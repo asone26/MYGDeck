@@ -9,7 +9,7 @@ export class Composer {
     this.card = card;
     this.el = el;
     const a = card.adapter;
-    el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select>
+    el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
       <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>
       <button class="send" title="전송 (Enter)">↵</button>`;
@@ -28,6 +28,13 @@ export class Composer {
       select.onchange = () => select.value && (card.userModel = true) && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
     } else {
       select.hidden = true;
+    }
+    const effort = el.querySelector(".effort");
+    if (a?.effort_cmd && a.efforts?.length) {
+      effort.append(new Option("Effort", ""), ...a.efforts.map((e) => new Option(e, e)));
+      effort.onchange = () => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
+    } else {
+      effort.hidden = true;
     }
 
     this.ta.addEventListener("keydown", (e) => this.onKey(e));

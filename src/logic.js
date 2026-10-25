@@ -199,7 +199,7 @@ function errorLine(err) {
 }
 
 /**
- * Card summary for a finished turn: what happened, where are we, what next.
+ * Card summary for a finished turn: what happened, where are we.
  */
 export function summarizeTurn(turn, progress) {
   const tools = turn?.tools ?? [];
@@ -208,19 +208,15 @@ export function summarizeTurn(turn, progress) {
   const check = [...commands].reverse().find((t) => CHECK_CMD.test(t.detail));
   const last = turn?.texts?.at(-1) ?? "";
   const what = [edited.size && `파일 ${edited.size}개 수정`, commands.length && `명령 ${commands.length}개 실행`].filter(Boolean).join(" · ");
-  const ask = turn?.prompt ? clip(turn.prompt.replace(/\s+/g, " ").trim(), 80) : null;
-  const s = { state: "done", ask, line: firstSentence(last) || what || "완료", what, cause: null, next: null, big: null };
+  const s = { state: "done", line: firstSentence(last) || what || "완료", what, cause: null, big: null };
   if (progress) s.big = `${progress.source === "spec" ? "스펙 진행" : "진행"} ${progress.done}/${progress.total}`;
 
   if (check?.error) {
     s.state = "failed";
     s.line = firstSentence(last) || `${check.detail} 실패`;
     s.cause = errorLine(check.error);
-    s.next = `${check.detail} 실패 원인을 찾아서 고쳐줘`;
     return s;
   }
-  // A spec checklist item is a hint for the big picture, not a safe instruction to send.
-  if (progress?.next && progress.source === "progress") s.next = `${clip(progress.next, 60)} 진행해줘`;
   return s;
 }
 
