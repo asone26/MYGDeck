@@ -38,7 +38,21 @@ function minutes(since) {
  */
 export function renderSummary(card, box) {
   const st = card.status;
+  // Rebuilding resets the scroll: stay at the bottom if the user was there, else keep their place in the history.
+  const top = box.scrollTop;
+  const atBottom = box.scrollHeight - top - box.clientHeight < 40;
   box.textContent = "";
+  for (const h of card.history ?? []) {
+    const past = el("div", "s-past");
+    if (h.ask) past.append(el("div", "s-ask", h.ask));
+    if (h.texts.length) past.append(answer(h.texts));
+    box.append(past);
+  }
+  renderCurrent(card, box, st);
+  box.scrollTop = atBottom ? box.scrollHeight : top;
+}
+
+function renderCurrent(card, box, st) {
   const [icon, label] = STATE[st] ?? ["", ""];
   const head = el("div", "s-head");
   head.append(el("span", "s-state", `${icon} ${label}`));

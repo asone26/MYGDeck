@@ -70,7 +70,7 @@ input, select, textarea { transition: border-color 0.15s var(--ease), box-shadow
 #chips { flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .chip {
   flex: 0 0 auto; display: flex; align-items: center; gap: 7px; white-space: nowrap; max-width: 340px;
-  border-color: transparent; background: transparent; border-radius: 999px; padding: 4px 8px 4px 10px; color: var(--muted);
+  border-color: transparent; background: transparent; border-radius: var(--r-sm); padding: 4px 8px 4px 10px; color: var(--muted);
 }
 .chip:hover { background: var(--raised); border-color: var(--line-2); color: var(--fg); }
 .chip.on {
@@ -173,6 +173,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
   background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
 }
 .s-loading { margin: auto; color: var(--muted); font-size: 15px; }
+.s-past { display: flex; flex-direction: column; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); opacity: 0.75; }
 .s-head { display: flex; align-items: baseline; gap: 10px; }
 .s-state { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
 .card[data-status="waiting"] .s-state { color: var(--warn); }

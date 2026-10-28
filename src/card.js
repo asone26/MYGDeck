@@ -14,8 +14,8 @@ const TEMPLATE = `
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span><span class="ctx" title="컨텍스트 사용량"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
-  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기 (Ctrl+.)</button>
-  <button class="b-shell" title="터미널 열기/닫기 (Ctrl+\`)">터미널 (Ctrl+\`)</button>
+  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기</button>
+  <button class="b-shell" title="터미널 열기/닫기">터미널</button>
 </div>
 <div class="mods">
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
@@ -41,6 +41,7 @@ export class Card {
     this.peek = [];
     this.view = "gui"; // preferred view; agents without hooks always show the raw CLI
     this.turnTools = [];
+    this.history = []; // finished turns { ask, texts }, shown above the current one in the GUI view
     this.menuOpen = false;
     this.el = document.createElement("section");
     this.el.className = "card";
@@ -150,7 +151,7 @@ export class Card {
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
-    btn.textContent = this.view === "cli" ? "GUI 보기 (Ctrl+.)" : "CLI 보기 (Ctrl+.)";
+    btn.textContent = this.view === "cli" ? "GUI 보기" : "CLI 보기";
     btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);
@@ -216,6 +217,7 @@ export class Card {
   onHook(event, data) {
     if (data?.transcript) this.transcript = data.transcript;
     if (event === "prompt") {
+      if (this.turnAsk || this.turn?.texts?.length) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
       this.turnSeq = (this.turnSeq ?? 0) + 1;
       this.turnTools = [];
       this.turnStart = Date.now();

@@ -196,6 +196,15 @@ pub fn git_push(root: String) -> Result<String, String> {
     })
 }
 
+/// Commits on HEAD that no remote has yet (0 when there is no remote), to light up "푸시".
+#[tauri::command]
+pub fn git_ahead(root: String) -> u32 {
+    if git(&root, &["remote"]).map_or(true, |r| r.trim().is_empty()) {
+        return 0;
+    }
+    git(&root, &["rev-list", "--count", "HEAD", "--not", "--remotes"]).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+}
+
 #[derive(Serialize)]
 pub struct Spec {
     name: String,

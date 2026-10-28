@@ -85,7 +85,7 @@ export class Explorer {
 
   setMode(m) {
     this.mode = m;
-    for (const b of this.el.querySelectorAll(".xbar button")) b.classList.toggle("on", b.dataset.m === m);
+    for (const b of this.el.querySelectorAll(".xbar button[data-m]")) b.classList.toggle("on", b.dataset.m === m);
     this.render();
   }
 
@@ -126,8 +126,14 @@ export class Explorer {
   }
 
   async refresh() {
-    const st = await invoke("git_status", { root: this.card.root }).catch(() => []);
+    const [st, ahead] = await Promise.all([
+      invoke("git_status", { root: this.card.root }).catch(() => []),
+      invoke("git_ahead", { root: this.card.root }).catch(() => 0),
+    ]);
     this.status = new Map(st.map((s) => [s.path, s.code]));
+    this.el.querySelector(".x-save").classList.toggle("on", st.length > 0);
+    this.el.querySelector(".x-push").classList.toggle("on", ahead > 0);
+    this.el.querySelector(".x-push").title = `커밋을 원격 저장소로 올립니다 (git push)${ahead ? ` · 올릴 커밋 ${ahead}개` : ""}`;
     this.card.setFileCount(st.length);
     if (this.mode === "changed") this.render();
     else this.recolor();

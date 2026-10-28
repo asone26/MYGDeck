@@ -46,6 +46,7 @@ pub fn run() {
             fsx::git_save,
             fsx::git_diff,
             fsx::git_push,
+            fsx::git_ahead,
             fsx::save_paste,
             fsx::open_file,
             fsx::rename_file,

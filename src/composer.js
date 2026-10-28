@@ -83,7 +83,9 @@ export class Composer {
 
   update() {
     this.ta.style.height = "auto";
-    this.ta.style.height = Math.min(this.ta.scrollHeight, 140) + "px";
+    // border-box: scrollHeight leaves out the border, so add it back or the box shrinks on first input.
+    const border = this.ta.offsetHeight - this.ta.clientHeight;
+    this.ta.style.height = Math.min(this.ta.scrollHeight + border, 140) + "px";
     this.ta.style.overflowY = this.ta.scrollHeight > 140 ? "auto" : "hidden";
     const v = this.ta.value;
     const cmds = this.card.adapter?.commands ?? [];
