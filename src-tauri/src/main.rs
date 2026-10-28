@@ -1,5 +1,5 @@
-// No console window in release builds on Windows.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// No console window on Windows, debug builds included (mygdeck.bat runs the debug build; nothing logs to stdout).
+#![windows_subsystem = "windows"]
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

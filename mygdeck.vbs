@@ -3,7 +3,7 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 root = fso.GetParentFolderName(WScript.ScriptFullName)
-exe = root & "\src-tauri\target\release\mygdeck.exe"
+exe = root & "\src-tauri\target\debug\mygdeck.exe"
 
 args = ""
 For Each a In WScript.Arguments
