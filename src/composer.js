@@ -11,7 +11,7 @@ export class Composer {
     const a = card.adapter;
     el.innerHTML = `<select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
-      <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>`;
+      <button class="stop" title="작업 중지 (Ctrl+Q)" hidden>■ 중지</button>`;
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
     this.ta = el.querySelector("textarea");

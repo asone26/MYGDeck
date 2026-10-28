@@ -14,12 +14,12 @@ const TEMPLATE = `
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
-  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기 (Alt+C)</button>
-  <button class="b-shell" title="터미널 열기/닫기 (Alt+T)">터미널 (Alt+T)</button>
+  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기 (Ctrl+.)</button>
+  <button class="b-shell" title="터미널 열기/닫기 (Ctrl+\`)">터미널 (Ctrl+\`)</button>
 </div>
 <div class="mods">
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
-  <details class="m-spec"><summary>스펙 <span class="spec-name"></span></summary><div class="spec md"></div></details>
+  <details class="m-spec"><summary>스펙 <span class="spec-name"></span> <span class="kbd">Ctrl+;</span></summary><div class="spec md"></div></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
@@ -148,7 +148,7 @@ export class Card {
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
-    btn.textContent = this.view === "cli" ? "GUI 보기 (Alt+C)" : "CLI 보기 (Alt+C)";
+    btn.textContent = this.view === "cli" ? "GUI 보기 (Ctrl+.)" : "CLI 보기 (Ctrl+.)";
     btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);
@@ -360,6 +360,11 @@ export class Card {
       if (this.$(".m-spec").open) this.loadSpec();
       this.viewer.reload();
     }, 400);
+  }
+
+  toggleSpec() {
+    const spec = this.$(".m-spec");
+    spec.open = !spec.open;
   }
 
   async loadSpec() {

@@ -234,9 +234,47 @@ pub fn open_file(root: String, rel: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(safe_join(&root, &rel)?, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Rename a file or folder in place. `name` is a bare name: no folders, never the project root itself.
+#[tauri::command]
+pub fn rename_file(root: String, rel: String, name: String) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err("쓸 수 없는 이름입니다".into());
+    }
+    if !Path::new(&rel).components().any(|c| matches!(c, Component::Normal(_))) {
+        return Err("path outside project".into());
+    }
+    let from = safe_join(&root, &rel)?;
+    let to = from.parent().ok_or("path outside project")?.join(name);
+    // Windows paths ignore case, so a case-only rename "exists" already: allow that one.
+    let same = from.file_name().is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(name));
+    if to.exists() && !same {
+        return Err("같은 이름이 이미 있습니다".into());
+    }
+    std::fs::rename(&from, &to).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rename_stays_in_place_and_refuses_bad_names() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-rename-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/a.txt"), "x").unwrap();
+        std::fs::write(dir.join("sub/b.txt"), "y").unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let r = |rel: &str, name: &str| rename_file(root.clone(), rel.into(), name.into());
+        assert!(r("sub/a.txt", "../evil.txt").is_err());
+        assert!(r("sub/a.txt", "b.txt").is_err()); // would overwrite
+        assert!(r("", "x").is_err()); // the project root itself
+        assert!(r("../x", "y").is_err());
+        r("sub/a.txt", "c.txt").unwrap();
+        assert!(dir.join("sub/c.txt").is_file() && !dir.join("sub/a.txt").exists());
+        r("sub/c.txt", "C.txt").unwrap(); // case-only rename
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn rejects_escaping_paths() {

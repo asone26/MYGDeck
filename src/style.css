@@ -205,6 +205,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .xmsg.bad { color: var(--bad); }
 .xn { padding: 2px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 12px/1.6 var(--mono); border-radius: 4px; margin: 0 4px; }
 .xn:hover { background: var(--raised); }
+.xren { width: calc(100% - 16px); box-sizing: border-box; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--pc); border-radius: 4px; padding: 0 4px; outline: none; }
 .xn.dir::before { content: "▸ "; color: var(--faint); }
 .xn.dir.open::before { content: "▾ "; }
 .xn[data-code="A"] { color: var(--ok); }

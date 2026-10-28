@@ -43,11 +43,14 @@ test("selection to line range and mention", () => {
 });
 
 test("deck keys work with and without physical key codes", () => {
-  assert.equal(isDeckKey({ altKey: true, code: "KeyJ", key: "ㅓ" }), true);
-  assert.equal(isDeckKey({ altKey: true, code: "", key: "j" }), true);
-  assert.equal(isDeckKey({ altKey: true, code: "", key: "=" }), true);
-  assert.equal(isDeckKey({ altKey: true, ctrlKey: true, code: "KeyJ" }), false);
-  assert.equal(isDeckKey({ altKey: true, code: "KeyB", key: "b" }), false);
+  assert.equal(isDeckKey({ ctrlKey: true, code: "KeyI", key: "ㅑ" }), true);
+  assert.equal(isDeckKey({ ctrlKey: true, code: "", key: " " }), true);
+  assert.equal(isDeckKey({ ctrlKey: true, code: "", key: "=" }), true);
+  assert.equal(isDeckKey({ ctrlKey: true, code: "Period" }), true);
+  assert.equal(isDeckKey({ ctrlKey: true, shiftKey: true, code: "KeyJ" }), false);
+  assert.equal(isDeckKey({ altKey: true, code: "KeyJ" }), false);
+  // Copy, cut, interrupt and Claude Code's own keys stay with the CLI.
+  for (const code of ["KeyC", "KeyX", "KeyO", "KeyT", "KeyV", "KeyJ", "KeyN", "KeyW", "ArrowLeft"]) assert.equal(isDeckKey({ ctrlKey: true, code }), false);
   assert.equal(keyCode({ code: "", key: "3" }), "Digit3");
 });
 

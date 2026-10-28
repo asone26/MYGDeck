@@ -48,6 +48,7 @@ pub fn run() {
             fsx::git_push,
             fsx::save_paste,
             fsx::open_file,
+            fsx::rename_file,
             turn::read_turn,
             watch::watch_project,
             watch::unwatch_project,

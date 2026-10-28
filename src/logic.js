@@ -18,7 +18,8 @@ export function splitDeck(densities, active) {
   return { main, side: all.filter((i) => densities[i] !== "full") };
 }
 
-const HUES = [28, 205, 135, 320, 52, 265, 175, 0, 95, 235];
+// Soft, mid-saturation tones that read well on the dark UI without glowing.
+const COLORS = ["#e3a06b", "#7aa6da", "#86bfa0", "#c79bd9", "#e08c8c", "#d6be76", "#6fbfc0", "#a3a8e8", "#b8c77a", "#e39bb6"];
 
 /**
  * Per-project color (spec 3.0 ③). The name picks a preferred color so a project usually keeps
@@ -27,7 +28,7 @@ const HUES = [28, 205, 135, 320, 52, 265, 175, 0, 95, 235];
 export function projectColor(name, used = []) {
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  const colors = HUES.map((hue) => `hsl(${hue} 72% 62%)`);
+  const colors = COLORS;
   for (let k = 0; k < colors.length; k++) {
     const c = colors[(h + k) % colors.length];
     if (!used.includes(c)) return c;
@@ -136,11 +137,12 @@ export function pasteSequence(text, bracketed) {
   return bracketed ? `\x1b[200~${text}\x1b[201~` : text.replace(/\r?\n/g, "\r");
 }
 
-/** Alt shortcuts owned by the deck; everything else goes to the CLI (spec 3.3). */
+/** Ctrl shortcuts owned by the deck; everything else goes to the CLI (spec 3.3). */
 export const DECK_KEYS = new Set([
-  "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
-  "KeyJ", "KeyO", "Equal", "Minus", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
-  "KeyI", "KeyT", "KeyN", "KeyW", "KeyC", "KeyX",
+  "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
+  "KeyI", "Equal", "Minus",
+  // Not Ctrl+letters: in the CLI those are copy/interrupt, line editing (Ctrl+W/N/J...) or Claude Code shortcuts.
+  "Space", "Quote", "F4", "Period", "KeyQ", "Backquote", "Semicolon", "PageUp", "PageDown", "Tab",
 ]);
 
 /**
@@ -152,11 +154,11 @@ export function keyCode(e) {
   const k = e.key ?? "";
   if (/^[a-z]$/i.test(k)) return "Key" + k.toUpperCase();
   if (/^[0-9]$/.test(k)) return "Digit" + k;
-  return { "=": "Equal", "+": "Equal", "-": "Minus" }[k] ?? k;
+  return { "=": "Equal", "+": "Equal", "-": "Minus", ".": "Period", ";": "Semicolon", "`": "Backquote", " ": "Space", "'": "Quote" }[k] ?? k;
 }
 
 export function isDeckKey(e) {
-  return e.altKey && !e.ctrlKey && !e.metaKey && DECK_KEYS.has(keyCode(e));
+  return !!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && DECK_KEYS.has(keyCode(e));
 }
 
 export const DENSITIES = ["mini", "compact", "full"];

@@ -135,7 +135,7 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="닫기 (Alt+W)">×</span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="닫기 (Ctrl+F4)">×</span>`;
     b.querySelector(".cn").textContent = c.name;
     b.onclick = (e) => (e.target.classList.contains("cx") ? closeCard(c) : setActive(i));
     chips.append(b);
@@ -157,7 +157,7 @@ function toggleOverview() {
   renderOverview();
 }
 
-/** Alt+O: every project as a tile on one screen (spec 3.0 ⑦). */
+/** Ctrl+0: every project as a tile on one screen (spec 3.0 ⑦). */
 function renderOverview() {
   overlay.innerHTML = `<div class="ov"><div class="ov-title">전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기</div><div class="ov-grid"></div></div>`;
   const grid = overlay.querySelector(".ov-grid");
@@ -242,7 +242,7 @@ window.addEventListener(
       closeOverlay();
       return app.cards[app.active]?.focusDefault();
     }
-    if (overlayKind === "overview" && !e.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) {
+    if (overlayKind === "overview" && !e.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) {
       e.preventDefault();
       if (e.key === "Enter") {
         closeOverlay();
@@ -262,12 +262,13 @@ window.addEventListener(
     e.stopPropagation();
     const k = keyCode(e);
     const c = app.cards[app.active];
-    if (k.startsWith("Digit")) setActive(Number(k.slice(5)) - 1);
-    else if (k === "KeyJ") {
+    if (k === "Digit0") toggleOverview();
+    else if (k.startsWith("Digit")) setActive(Number(k.slice(5)) - 1);
+    else if (k === "Space") {
       const i = nextAttention(app.cards.map((x) => x.status), app.active);
       if (i >= 0) setActive(i);
-    } else if (k === "KeyO") toggleOverview();
-    else if (k === "KeyN") addProject();
+    }
+    else if (k === "Quote") addProject();
     else if (!c) return;
     else if (k === "Equal" || k === "Minus") {
       const d = DENSITIES.indexOf(c.density) + (k === "Equal" ? 1 : -1);
@@ -275,14 +276,15 @@ window.addEventListener(
         c.setDensity(DENSITIES[d]);
         layout();
       }
-    } else if (k === "ArrowLeft" || k === "ArrowRight") {
-      setActive((app.active + (k === "ArrowRight" ? 1 : -1) + app.cards.length) % app.cards.length);
-    } else if (k === "ArrowUp" || k === "ArrowDown") c.cycleFocus(k === "ArrowDown" ? 1 : -1);
+    } else if (k === "PageUp" || k === "PageDown") {
+      setActive((app.active + (k === "PageDown" ? 1 : -1) + app.cards.length) % app.cards.length);
+    } else if (k === "Tab") c.cycleFocus(1);
     else if (k === "KeyI") c.viewer.insertSelection();
-    else if (k === "KeyT") c.toggleShell();
-    else if (k === "KeyC") c.toggleView();
-    else if (k === "KeyX") c.interrupt();
-    else if (k === "KeyW") closeCard(c);
+    else if (k === "Backquote") c.toggleShell();
+    else if (k === "Period") c.toggleView();
+    else if (k === "Semicolon") c.toggleSpec();
+    else if (k === "KeyQ") c.interrupt();
+    else if (k === "F4") closeCard(c);
   },
   true,
 );

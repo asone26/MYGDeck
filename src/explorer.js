@@ -17,21 +17,76 @@ export class Explorer {
     el.querySelector(".x-push").onclick = () => this.git("git_push", {}, "푸시했습니다");
     el.querySelector(".xbar").addEventListener("click", (e) => {
       const m = e.target.dataset?.m;
-      if (!m) return;
-      this.mode = m;
-      for (const b of el.querySelectorAll(".xbar button")) b.classList.toggle("on", b.dataset.m === m);
-      this.render();
+      if (m) this.setMode(m);
     });
+    // Opening the panel with nothing changed: show the whole tree instead of an empty list.
+    const panel = el.closest("details");
+    panel?.addEventListener("toggle", () => panel.open && !this.status.size && this.mode !== "all" && this.setMode("all"));
     this.list.addEventListener("click", (e) => this.onClick(e));
     // Double-click a file: open it with the OS default app (HTML → browser).
     this.list.addEventListener("dblclick", (e) => {
       const n = e.target.closest("[data-path]");
       if (n && !n.dataset.dir) invoke("open_file", { root: card.root, rel: n.dataset.path }).catch((err) => this.say(`열기 실패: ${err}`, true));
     });
+    this.list.addEventListener("contextmenu", (e) => {
+      const n = e.target.closest("[data-path]");
+      if (!n || n.querySelector("input")) return;
+      e.preventDefault();
+      this.rename(n);
+    });
     this.list.addEventListener("dragstart", (e) => {
       const p = e.target.closest?.("[data-path]")?.dataset.path;
       if (p) e.dataTransfer.setData("text/plain", mentionFor(card.adapter?.mention, p));
     });
+  }
+
+  /** Inline rename (right-click): Enter or leaving the box saves, Esc cancels. */
+  rename(n) {
+    const rel = n.dataset.path;
+    const base = rel.split("/").pop();
+    const label = n.textContent;
+    const input = document.createElement("input");
+    input.className = "xren";
+    input.value = base;
+    input.spellcheck = false;
+    n.draggable = false;
+    n.textContent = "";
+    n.append(input);
+    input.focus();
+    const dot = base.lastIndexOf(".");
+    input.setSelectionRange(0, n.dataset.dir || dot <= 0 ? base.length : dot);
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (save && name && name !== base) {
+        try {
+          await invoke("rename_file", { root: this.card.root, rel, name });
+          this.say(`이름 변경: ${base} → ${name}`);
+          this.render();
+          this.card.onFsChange();
+          return;
+        } catch (err) {
+          this.say(`이름 변경 실패: ${err}`, true);
+        }
+      }
+      n.textContent = label;
+      n.draggable = !n.dataset.dir;
+    };
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") finish(true);
+      else if (e.key === "Escape") finish(false);
+    });
+    input.addEventListener("blur", () => finish(true));
+    for (const ev of ["click", "dblclick", "mousedown"]) input.addEventListener(ev, (e) => e.stopPropagation());
+  }
+
+  setMode(m) {
+    this.mode = m;
+    for (const b of this.el.querySelectorAll(".xbar button")) b.classList.toggle("on", b.dataset.m === m);
+    this.render();
   }
 
   /** Commit with a message from the free AI pool; without one, a message listing the changed files. */
@@ -129,6 +184,6 @@ function node(path, label, dir, code, depth) {
   d.draggable = !dir;
   d.style.paddingLeft = `${8 + depth * 12}px`;
   d.textContent = label;
-  d.title = dir ? path : `${path}\n클릭: 코드 보기 · 입력창으로 끌어다 놓기: @파일`;
+  d.title = dir ? `${path}\n오른쪽 클릭: 이름 바꾸기` : `${path}\n클릭: 코드 보기 · 더블클릭: 실행 · 오른쪽 클릭: 이름 바꾸기 · 입력창으로 끌어다 놓기: @파일`;
   return d;
 }

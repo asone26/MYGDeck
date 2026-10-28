@@ -50,7 +50,7 @@ export function renderSummary(card, box) {
   // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
   if (card.menuOpen && st !== "waiting") {
     const menu = el("div", "s-next");
-    menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Alt+C)", () => card.toggleView(), "ok"));
+    menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Ctrl+.)", () => card.toggleView(), "ok"));
     box.append(menu);
   }
 
