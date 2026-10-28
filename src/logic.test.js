@@ -120,10 +120,15 @@ test("menus and permission lines", () => {
   assert.ok(MENU.test("Enter to confirm · Esc to cancel"));
   assert.ok(!MENU.test("The command ran and printed ok."));
   assert.deepEqual(menuChoices(["1. old list item", "Pick a model", "❯ 1. Opus", "2. Haiku", "Enter to confirm"]), [
-    { label: "Opus", keys: "1" },
-    { label: "Haiku", keys: "2" },
+    { label: "Opus", keys: ["1"] },
+    { label: "Haiku", keys: ["2"] },
   ]);
-  assert.deepEqual(menuChoices(["Overwrite? (y/n)"]).map((c) => c.keys), ["y\r", "n\r"]);
+  // Claude Code's folder trust prompt: no numbers, cursor on the default.
+  assert.deepEqual(menuChoices(["Quick safety check: trust this folder?", "Security guide", "❯ No, exit", "  Yes, I trust this folder", "Enter to confirm · Esc to cancel"]), [
+    { label: "No, exit", keys: ["\r"] },
+    { label: "Yes, I trust this folder", keys: ["\x1b[B", "\r"] },
+  ]);
+  assert.deepEqual(menuChoices(["Overwrite? (y/n)"]).map((c) => c.keys), [["y", "\r"], ["n", "\r"]]);
   assert.deepEqual(menuChoices(["just text"]), []);
   assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });

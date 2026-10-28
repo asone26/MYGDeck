@@ -164,6 +164,11 @@ export class Composer {
   send() {
     const text = this.ta.value.replace(/\s+$/, "");
     if (!text.trim()) return;
+    // The Enter after the text would pick the highlighted menu option (e.g. "No, exit" on the trust prompt).
+    if (this.card.menuOpen && this.card.menuChoices.length) {
+      message("CLI 선택 창이 열려 있습니다. 위의 버튼으로 먼저 고르세요.", { kind: "warning" });
+      return;
+    }
     const r = routeInput(text);
     // Search and ?? go to the free pool when one is set up (4.5); without it they go to the agent.
     const pooled = ["ask", "search"].includes(r.route);

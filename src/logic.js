@@ -166,20 +166,36 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 export const MENU = /Enter to confirm|Esc to cancel|❯\s*\d+\.|\(y\/n\)|\[y\/N\]|\[Y\/n\]/i;
 
 /**
- * Choices of the on-screen CLI menu, as { label, keys } to type into the CLI.
- * Numbered menus take the last "1. 2. 3." run (a number key picks it); y/n prompts get Yes/No.
+ * Choices of the on-screen CLI menu, as { label, keys }: key sequences to type into the CLI one by one.
+ * Lines keep their indentation. Numbered menus take the last "1. 2. 3." run (a number key picks it);
+ * unnumbered "❯ No, exit / Yes, I trust" menus are the lines aligned with the cursor's label (arrows, then Enter);
+ * y/n prompts get Yes/No.
  */
 export function menuChoices(lines) {
   let opts = [];
   for (const l of lines) {
-    const m = /^(?:[❯>›]\s*)?(\d)\.\s+(.+)$/.exec(l);
+    const m = /^\s*(?:[❯>›]\s*)?(\d)\.\s+(.+)$/.exec(l);
     if (!m) continue;
     const n = Number(m[1]);
     if (n === 1) opts = [];
-    if (n === opts.length + 1) opts.push({ label: m[2], keys: m[1] });
+    if (n === opts.length + 1) opts.push({ label: m[2].trim(), keys: [m[1]] });
   }
   if (opts.length) return opts;
-  if (/\(y\/n\)|\[y\/N\]|\[Y\/n\]/i.test(lines.at(-1) ?? "")) return [{ label: "Yes", keys: "y\r" }, { label: "No", keys: "n\r" }];
+  const at = lines.findLastIndex((l) => /^\s*❯\s+\S/.test(l));
+  if (at >= 0) {
+    const col = /^\s*❯\s+/.exec(lines[at])[0].length;
+    const isOption = (l) => l.length > col && !l.slice(0, col).trim() && l[col] !== " ";
+    let from = at;
+    let to = at;
+    while (from > 0 && isOption(lines[from - 1])) from--;
+    while (to < lines.length - 1 && isOption(lines[to + 1])) to++;
+    for (let i = from; i <= to; i++) {
+      const d = i - at;
+      opts.push({ label: lines[i].slice(col).trim(), keys: [...Array(Math.abs(d)).fill(d > 0 ? "\x1b[B" : "\x1b[A"), "\r"] });
+    }
+    return opts;
+  }
+  if (/\(y\/n\)|\[y\/N\]|\[Y\/n\]/i.test(lines.at(-1) ?? "")) return [{ label: "Yes", keys: ["y", "\r"] }, { label: "No", keys: ["n", "\r"] }];
   return [];
 }
 

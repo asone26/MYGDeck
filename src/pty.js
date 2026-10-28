@@ -93,12 +93,12 @@ export class Pty {
   }
 
   /** Last non-empty screen lines, for compact cards and the overview. */
-  lastLines(n) {
+  lastLines(n, keepIndent = false) {
     const b = this.term.buffer.active;
     const out = [];
     for (let y = b.baseY + b.cursorY; y >= 0 && out.length < n; y--) {
-      const line = b.getLine(y)?.translateToString(true).trim();
-      if (line) out.unshift(line);
+      const raw = b.getLine(y)?.translateToString(true) ?? "";
+      if (raw.trim()) out.unshift(keepIndent ? raw.trimEnd() : raw.trim());
     }
     return out;
   }

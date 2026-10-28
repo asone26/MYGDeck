@@ -194,7 +194,7 @@ export class Card {
     if (!this.peekTimer) {
       this.peekTimer = setTimeout(() => {
         this.peekTimer = null;
-        const lines = this.agent.lastLines(15);
+        const lines = this.agent.lastLines(15, true);
         const menu = MENU.test(lines.slice(-8).join("\n"));
         const choices = menu ? menuChoices(lines) : [];
         if (menu !== this.menuOpen || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {

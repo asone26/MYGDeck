@@ -65,7 +65,8 @@ function renderCurrent(card, box, st) {
     const choices = card.menuChoices ?? [];
     if (choices.length) {
       menu.append(el("span", "", "선택하세요:"));
-      for (const c of choices) menu.append(button(c.label, () => card.agent.write(c.keys)));
+      // One key per write: the CLI may not split arrows + Enter sent as one chunk.
+      for (const c of choices) menu.append(button(c.label, () => c.keys.forEach((k, i) => setTimeout(() => card.agent.write(k), i * 60))));
       menu.append(button("취소", () => card.agent.write("\x1b")));
     } else {
       menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Ctrl+.)", () => card.toggleView(), "ok"));
