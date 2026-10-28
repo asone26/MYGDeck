@@ -21,7 +21,7 @@ const TEMPLATE = `
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>스펙 <span class="spec-name"></span></summary><div class="spec md"></div></details>
 </div>
-<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><button class="b-gui" title="GUI 화면으로 돌아가기" hidden>GUI 보기 (Alt+C)</button><div class="viewer" hidden></div></div>
+<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
@@ -49,7 +49,8 @@ export class Card {
     this.$ = (sel) => this.el.querySelector(sel);
     this.$(".name").textContent = this.name;
     this.$(".name").title = this.root;
-    this.$(".agent").onchange = (e) => this.onAgentPick(e.target.value);
+    this.pick = this.$(".agent");
+    this.pick.onchange = (e) => this.onAgentPick(e.target.value);
     this.$(".b-restart").onclick = () => this.restart();
     this.$(".b-shell").onclick = () => this.toggleShell();
     const grip = this.$(".shell-grip");
@@ -59,7 +60,6 @@ export class Card {
       grip.onpointermove = (m) => { box.style.height = `${Math.max(60, bottom - m.clientY)}px`; };
       grip.onpointerup = () => { grip.onpointermove = grip.onpointerup = null; };
     };
-    this.$(".b-gui").onclick = () => this.toggleView();
     this.$(".b-cli").onclick = () => this.toggleView();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
     const spec = this.$(".m-spec");
@@ -102,7 +102,9 @@ export class Card {
   }
 
   renderAgentPick() {
-    const pick = this.$(".agent");
+    const pick = this.pick;
+    // Composer rebuilds its row on agent switch, so re-attach the picker to its bottom-left each time.
+    this.$(".composer").prepend(pick);
     const others = this.app.adapters.filter((a) => a.detected && a.name !== this.adapter?.name);
     pick.textContent = "";
     pick.append(new Option(this.adapter?.name ?? (this.cfg.command ? "custom" : "shell"), ""));
@@ -111,7 +113,7 @@ export class Card {
   }
 
   onAgentPick(value) {
-    this.$(".agent").value = "";
+    this.pick.value = "";
     if (!value) return;
     const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
     this.rotate(next, next === this.adapter ? "사용자가 새 세션을 요청했습니다." : `에이전트를 ${next.name}(으)로 바꿉니다.`);
@@ -143,8 +145,11 @@ export class Card {
     const show = this.view === "gui" && this.hooks;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
-    this.$(".b-cli").hidden = !show;
-    this.$(".b-gui").hidden = this.view !== "cli" || !this.hooks;
+    // One header button toggles both ways; only hook agents have a GUI view.
+    const btn = this.$(".b-cli");
+    btn.hidden = !this.hooks;
+    btn.textContent = this.view === "cli" ? "GUI 보기 (Alt+C)" : "CLI 보기 (Alt+C)";
+    btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);
     if (wasFocused && show) box.focus();

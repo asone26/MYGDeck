@@ -9,12 +9,11 @@ export class Composer {
     this.card = card;
     this.el = el;
     const a = card.adapter;
-    el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
+    el.innerHTML = `<select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
       <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>`;
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
-    el.querySelector(".ptag").textContent = card.name;
     this.ta = el.querySelector("textarea");
     this.ta.placeholder = `${card.name}에게 지시 · / 명령`;
     this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)";

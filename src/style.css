@@ -135,7 +135,7 @@ input, select, textarea { transition: border-color 0.15s var(--ease), box-shadow
 }
 .head .idx { color: var(--faint); font: 11px var(--mono); }
 .head .name { overflow: hidden; text-overflow: ellipsis; max-width: 40%; font-weight: 600; letter-spacing: -0.01em; }
-.head .agent { color: var(--muted); background: var(--raised); font-size: 10.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
+.agent { align-self: center; color: var(--muted); background: var(--raised); font-size: 10.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
 .head .badge { font-size: 12px; }
 .head .stext { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-size: 12px; }
 .head button { padding: 2px 8px; font-size: 12px; background: transparent; border-color: transparent; color: var(--muted); }
@@ -149,12 +149,6 @@ input, select, textarea { transition: border-color 0.15s var(--ease), box-shadow
 .body { position: relative; flex: 1; min-height: 80px; }
 /* z-index 0 isolates xterm's own layers (some use z-index 5+) so the GUI view on top gets the clicks. */
 .term { position: absolute; inset: 0; z-index: 0; padding: 6px 0 0 10px; }
-.b-gui {
-  position: absolute; top: 8px; right: 16px; z-index: 2; font-size: 12px;
-  background: color-mix(in srgb, var(--raised) 80%, transparent); backdrop-filter: blur(6px);
-  border-radius: 999px; padding: 3px 12px; opacity: 0.9;
-}
-.b-gui:hover { opacity: 1; }
 .shell { position: relative; flex: none; height: 23%; max-height: 85%; border-top: 1px solid var(--line); padding: 6px 0 0 10px; }
 .shell-grip { position: absolute; top: -3px; left: 0; right: 0; height: 7px; cursor: row-resize; z-index: 10; transition: background-color 0.15s; }
 .shell-grip:hover { background: color-mix(in srgb, var(--pc) 40%, transparent); }
@@ -239,7 +233,6 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 /* composer */
 /* --row: height of a one-line textarea (13px × 1.45 + 6px×2 padding + 1px×2 border), so side controls line up with it */
 .composer { --row: 33px; display: flex; align-items: flex-end; gap: 6px; padding: 8px; border-top: 1px solid var(--line); background: #0f1217; }
-.ptag { color: var(--pc); font-weight: 600; font-size: 11px; line-height: var(--row); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cbox { position: relative; flex: 1; min-width: 0; }
 .composer textarea {
   display: block; width: 100%; box-sizing: border-box; resize: none; max-height: 140px; overflow-y: hidden;
