@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summarizeTurn, parseProgress, permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
+import { permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "four", "many"]);
@@ -40,43 +40,6 @@ test("selection to line range and mention", () => {
   assert.deepEqual(lineRange("", "one"), [1, 1]);
   assert.equal(mentionFor("@{path}", "src/a b.ts", [3, 4]), '@"src/a b.ts" L3-4');
   assert.equal(mentionFor(undefined, "x.rs"), "@x.rs");
-});
-
-test("summary: failed check gives cause and next step", () => {
-  const turn = {
-    texts: ["I updated the login rule. Tests are failing."],
-    tools: [
-      { name: "Edit", detail: "C:/p/src/auth.js" },
-      { name: "Bash", detail: "npm test", error: "Exit code 1\n  ✕ login rejects short pw\nError: expected false" },
-    ],
-  };
-  const s = summarizeTurn(turn, null);
-  assert.equal(s.state, "failed");
-  assert.equal(s.line, "I updated the login rule.");
-  assert.equal(s.cause, "Error: expected false");
-  assert.equal(summarizeTurn({ texts: [], tools: turn.tools }, null).line, "npm test 실패");
-});
-
-test("summary: progress counts checkboxes", () => {
-  const progress = parseProgress("- [x] 로그인\n- [ ] 회원가입\n* [X] 설정\n");
-  assert.deepEqual(progress, { done: 2, total: 3, next: "회원가입", source: "progress" });
-  const s = summarizeTurn({ texts: ["Done."], tools: [{ name: "Edit", detail: "x.rs" }, { name: "Bash", detail: "cargo test" }] }, progress);
-  assert.equal(s.big, "진행 2/3");
-  assert.equal(parseProgress("no boxes"), null);
-});
-
-test("summary: request line, spec progress", () => {
-  const spec = parseProgress("- [x] a\n- [ ] **b**\n", "spec");
-  const s = summarizeTurn({ prompt: "README 고쳐줘\n자세히", texts: ["Checking.", "README를 고쳤습니다."], tools: [{ name: "Edit", detail: "C:/p/README.md" }] }, spec);
-  assert.equal(s.line, "README를 고쳤습니다.");
-  assert.equal(s.big, "스펙 진행 1/2");
-});
-
-test("menus and permission lines", () => {
-  assert.ok(MENU.test("❯ 1. Yes, switch to Haiku"));
-  assert.ok(MENU.test("Enter to confirm · Esc to cancel"));
-  assert.ok(!MENU.test("The command ran and printed ok."));
-  assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });
 
 test("deck keys work with and without physical key codes", () => {
@@ -121,7 +84,7 @@ test("router: explicit prefixes win, rules pick the rest", async () => {
   assert.equal(routeInput("로그인 화면에 토글 추가해").route, "code");
   assert.equal(routeInput("왜 터미널 출력이 끊기는지 원인 분석해").route, "deep");
   assert.equal(routeInput("Tauri v2 global shortcut 쓰는 법?").route, "search");
-  assert.equal(routeInput("이 diff 한 줄로 요약해줘").route, "cheap");
+  assert.equal(routeInput("이 diff 한 줄로 요약해줘").route, "code");
   assert.equal(nextRoute("code", ["code", "deep"]), "deep");
   assert.equal(nextRoute("deep", ["code", "deep"]), "code");
 });
@@ -143,8 +106,15 @@ test("router: everyday inputs land on the expected path", async () => {
     ["이 에러 원인이 뭐야? ECONNREFUSED 127.0.0.1", "search"],
     ["오늘 환율 알려줘", "search"],
     ["vite 최신 버전이 뭐야", "search"],
-    ["README 요약해줘", "cheap"],
-    ["이 함수 설명해줘", "cheap"],
+    ["README 요약해줘", "code"],
+    ["이 함수 설명해줘", "code"],
   ];
   for (const [text, want] of cases) assert.equal(routeInput(text).route, want, text);
+});
+
+test("menus and permission lines", () => {
+  assert.ok(MENU.test("❯ 1. Yes, switch to Haiku"));
+  assert.ok(MENU.test("Enter to confirm · Esc to cancel"));
+  assert.ok(!MENU.test("The command ran and printed ok."));
+  assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });

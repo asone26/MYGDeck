@@ -25,14 +25,16 @@ export class Composer {
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
       select.append(new Option("모델", ""), ...a.models.map((m) => new Option(m, m)));
-      select.onchange = () => select.value && (card.userModel = true) && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
+      select.value = a.base_model; // matches the launch flags
+      select.onchange =() => select.value && (card.userModel = true) && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
     } else {
       select.hidden = true;
     }
     const effort = el.querySelector(".effort");
     if (a?.effort_cmd && a.efforts?.length) {
       effort.append(new Option("Effort", ""), ...a.efforts.map((e) => new Option(e, e)));
-      effort.onchange = () => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
+      effort.value = /--effort (\S+)/.exec(a.launch)?.[1] ?? "";
+      effort.onchange =() => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
     } else {
       effort.hidden = true;
     }
@@ -150,8 +152,8 @@ export class Composer {
     const text = this.ta.value.replace(/\s+$/, "");
     if (!text.trim()) return;
     const r = routeInput(text);
-    // Search, cheap and ?? all go to the free pool when one is set up (4.5); without it they go to the agent.
-    const pooled = ["ask", "search", "cheap"].includes(r.route);
+    // Search and ?? go to the free pool when one is set up (4.5); without it they go to the agent.
+    const pooled = ["ask", "search"].includes(r.route);
     const route = r.route === "cli" ? "cli" : pooled && poolReady() ? "ask" : this.reachable().includes(r.route) ? r.route : "code";
     this.last = { text: r.route === "ask" ? text : r.text, route, shown: r.route };
     this.dispatch(route, this.last.text);

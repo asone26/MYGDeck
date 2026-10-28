@@ -7,14 +7,12 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const SERVICE: &str = "mygdeck";
-const OLLAMA: &str = "ollama";
-const OLLAMA_URL: &str = "http://localhost:11434";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Connection {
     pub id: String,
     pub name: String,
-    /// "openai" (any OpenAI-compatible server: OpenAI, Ollama, OpenRouter, Gemini...), "anthropic",
+    /// "openai" (any OpenAI-compatible server: OpenAI, OpenRouter, Gemini...), "anthropic",
     /// or "search" (Tavily: web search for the question path, never a chat model).
     pub kind: String,
     pub base_url: String,
@@ -94,42 +92,9 @@ pub fn ai_save(conn: Connection, key: Option<String>) -> Result<(), String> {
 #[tauri::command]
 pub fn ai_delete(id: String) -> Result<(), String> {
     let _ = entry(&id)?.delete_credential();
-    let mut c = read();
-    // A removed local connection must not come back at the next start.
-    if id == OLLAMA {
-        c.extra.insert("ollama_ignored".into(), Value::Bool(true));
-    }
+    let c = read();
     let list: Vec<_> = conns(&c).into_iter().filter(|x| x.id != id).collect();
     write(c, &list)
-}
-
-/// Korean-strong models first, embedding models never.
-fn pick_model(names: &[String]) -> Option<String> {
-    let chat: Vec<_> = names.iter().filter(|n| !n.contains("embed")).collect();
-    ["exaone", "gemma", "qwen"].iter().find_map(|p| chat.iter().find(|n| n.starts_with(p))).or(chat.first()).map(|n| n.to_string())
-}
-
-/// App start: a running local Ollama becomes a free connection without any setup (spec 4.5). Returns true when one was added.
-#[tauri::command]
-pub async fn ai_detect() -> bool {
-    tauri::async_runtime::spawn_blocking(|| {
-        let c = read();
-        if c.extra.get("ollama_ignored") == Some(&Value::Bool(true)) || conns(&c).iter().any(|x| x.base_url.contains(":11434")) {
-            return false;
-        }
-        let agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(2))).build().into();
-        let tags: Value = match ureq::Agent::get(&agent, format!("{OLLAMA_URL}/api/tags")).call().and_then(|mut r| r.body_mut().read_json()) {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        let names: Vec<String> = tags["models"].as_array().into_iter().flatten().filter_map(|m| m["name"].as_str().map(String::from)).collect();
-        let Some(model) = pick_model(&names) else { return false };
-        let mut list = conns(&c);
-        list.push(Connection { id: OLLAMA.into(), name: "Ollama".into(), kind: "openai".into(), base_url: format!("{OLLAMA_URL}/v1"), model, free: true });
-        write(c, &list).is_ok()
-    })
-    .await
-    .unwrap_or(false)
 }
 
 /// Connections that hit a limit or rejected the key sit out until this time (spec 4.5: spill over to the next free one).
@@ -328,14 +293,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn picks_korean_strong_chat_model() {
-        let n = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(pick_model(&n(&["nomic-embed-text", "qwen2.5:3b", "exaone3.5:7.8b"])).as_deref(), Some("exaone3.5:7.8b"));
-        assert_eq!(pick_model(&n(&["llama3.2:3b"])).as_deref(), Some("llama3.2:3b"));
-        assert_eq!(pick_model(&n(&["nomic-embed-text"])), None);
-    }
-
-    #[test]
     fn findings_are_numbered_into_the_prompt() {
         let hits = vec![(Source { title: "Doc".into(), url: "https://x.dev".into() }, "내용".to_string())];
         let p = with_findings("질문?", &hits);
@@ -359,7 +316,7 @@ mod tests {
 
     #[test]
     fn connections_round_trip_through_extra() {
-        let c: Config = serde_json::from_str(r#"{"projects":[],"connections":[{"id":"o","name":"Ollama","kind":"openai","base_url":"http://localhost:11434/v1","free":true}]}"#).unwrap();
+        let c: Config = serde_json::from_str(r#"{"projects":[],"connections":[{"id":"o","name":"Local","kind":"openai","base_url":"http://localhost:8080/v1","free":true}]}"#).unwrap();
         let l = conns(&c);
         assert_eq!(l[0].id, "o");
         assert!(l[0].free && l[0].model.is_empty());

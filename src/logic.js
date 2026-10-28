@@ -161,68 +161,9 @@ export function isDeckKey(e) {
 
 export const DENSITIES = ["mini", "compact", "full"];
 
-// ---- Summary view (spec 3.2 ④-1): rule-based, from the agent's own transcript ----
-
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const CHECK_CMD = /\b(test|tests|jest|vitest|pytest|mocha|tsc|eslint|lint|clippy|build|check|vet)\b|cargo (test|build|check)|go (test|build)|npm (run )?(test|build)|make\b|gradle|mvn/i;
 /** On-screen markers of an interactive CLI menu the user must answer in the raw CLI. */
 export const MENU = /Enter to confirm|Esc to cancel|❯\s*\d+\.|\(y\/n\)|\[y\/N\]|\[Y\/n\]/i;
-
-/**
- * Progress from markdown checkboxes: done / total and the next open item.
- * `source` is "progress" (.mygdeck/progress.md, a work log) or "spec" (the spec's checklist).
- */
-export function parseProgress(md, source = "progress") {
-  if (!md) return null;
-  const items = [...md.matchAll(/^\s*[-*]\s+\[( |x|X)\]\s+(.+)$/gm)];
-  if (!items.length) return null;
-  const done = items.filter((m) => m[1] !== " ").length;
-  const next = items.find((m) => m[1] === " ")?.[2].replace(/\*\*/g, "").trim() ?? null;
-  return { done, total: items.length, next, source };
-}
-
-function firstSentence(text) {
-  const plain = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[#>*_`|]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const m = plain.match(/^(.{8,}?[.!?。])(\s|$)/);
-  const s = m ? m[1] : plain;
-  return s.length > 110 ? s.slice(0, 108) + "…" : s;
-}
-
-function errorLine(err) {
-  const lines = String(err).split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !/^exit code \d+$/i.test(l));
-  const s = lines.find((l) => /error|fail|exception|cannot|not found|undefined/i.test(l)) ?? lines[0] ?? "";
-  return s.length > 140 ? s.slice(0, 138) + "…" : s;
-}
-
-/**
- * Card summary for a finished turn: what happened, where are we.
- */
-export function summarizeTurn(turn, progress) {
-  const tools = turn?.tools ?? [];
-  const edited = new Set(tools.filter((t) => EDIT_TOOLS.has(t.name)).map((t) => t.detail.split(/[\\/]/).pop()));
-  const commands = tools.filter((t) => t.name === "Bash" || t.name === "PowerShell");
-  const check = [...commands].reverse().find((t) => CHECK_CMD.test(t.detail));
-  const last = turn?.texts?.at(-1) ?? "";
-  const what = [edited.size && `파일 ${edited.size}개 수정`, commands.length && `명령 ${commands.length}개 실행`].filter(Boolean).join(" · ");
-  const s = { state: "done", line: firstSentence(last) || what || "완료", what, cause: null, big: null };
-  if (progress) s.big = `${progress.source === "spec" ? "스펙 진행" : "진행"} ${progress.done}/${progress.total}`;
-
-  if (check?.error) {
-    s.state = "failed";
-    s.line = firstSentence(last) || `${check.detail} 실패`;
-    s.cause = errorLine(check.error);
-    return s;
-  }
-  return s;
-}
-
-function clip(s, n) {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
-}
 
 /** Plain-language line for a permission prompt, from the last tool the agent tried. */
 export function permissionLine(tool, detail) {
@@ -230,6 +171,10 @@ export function permissionLine(tool, detail) {
   if (tool === "Bash" || tool === "PowerShell") return `허용하면 이 명령이 실행됩니다: ${detail}`;
   if (EDIT_TOOLS.has(tool)) return `허용하면 이 파일이 바뀝니다: ${detail}`;
   return `허용하면 ${tool}${detail ? ` (${detail})` : ""}을 실행합니다`;
+}
+
+function clip(s, n) {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 export function basename(p) {
@@ -263,7 +208,6 @@ const FILE = /[\w./\\-]+\.(js|ts|rs|py|md|json|toml|css|html)\b|\bsrc[/\\]/;
 const SEARCH = /(최신|오늘|현재|환율|날씨|뉴스|가격|주가|공식\s*문서|릴리[스즈]|버전|사용법|쓰는\s*(법|방법)|exception|stack ?trace)/i;
 const ERRNO = /\bE[A-Z]{4,}\b/;
 const DEEP = /(원인|설계|아키텍처|난해|디버깅|root cause|why does|architecture)/i;
-const CHEAP = /(요약|설명해|한\s*줄|번역|뜻)/;
 
 /** Input router (spec 4.3), rules only: which path an input takes. `??`/`/`/`!`/`#` are explicit and skip the rules.
  *  Work on the project (a verb or a file name) always goes to the agent, so only plain questions reach the other paths. */
@@ -274,10 +218,9 @@ export function routeInput(text) {
   if (ACTION.test(t) || FILE.test(t)) return { route: "code", text };
   if (SEARCH.test(t) || ERRNO.test(t)) return { route: "search", text };
   if (DEEP.test(t)) return { route: "deep", text };
-  if (CHEAP.test(t)) return { route: "cheap", text };
   return { route: "code", text };
 }
 
-export const ROUTE_CHIP = { cli: "⌨ cli", ask: "?? ask", code: "🛠 code", deep: "🧠 deep", search: "🔍 search", cheap: "💬 cheap" };
+export const ROUTE_CHIP = { cli: "⌨ cli", ask: "?? ask", code: "🛠 code", deep: "🧠 deep", search: "🔍 search" };
 /** Tab cycles the paths the deck can currently reach. */
 export const nextRoute = (route, reachable) => reachable[(reachable.indexOf(route) + 1) % reachable.length];

@@ -6,7 +6,7 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, ROTATE_AT, basename, handoffPrompt, hookStatus, parseProgress, pasteSequence, projectColor, seedPrompt, summarizeTurn } from "./logic.js";
+import { BADGE, MENU, ROTATE_AT, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -14,14 +14,14 @@ const TEMPLATE = `
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
-  <button class="b-close" title="닫기 (Alt+W)">×</button>
+  <button class="b-shell" title="터미널 열기/닫기 (Alt+T)">터미널</button>
 </div>
 <div class="mods">
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>스펙 <span class="spec-name"></span></summary><div class="spec md"></div></details>
 </div>
-<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><button class="b-gui" title="요약 화면으로 돌아가기" hidden>요약 보기 (Alt+C)</button><div class="viewer" hidden></div></div>
-<div class="shell" hidden></div>
+<div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><button class="b-gui" title="GUI 화면으로 돌아가기" hidden>GUI 보기 (Alt+C)</button><div class="viewer" hidden></div></div>
+<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>`;
@@ -38,9 +38,8 @@ export class Card {
     this.hooks = adapter?.status === "hooks";
     this.files = null;
     this.peek = [];
-    this.view = "summary"; // preferred view; the raw CLI still shows when there is nothing to summarize
+    this.view = "gui"; // preferred view; agents without hooks always show the raw CLI
     this.turnTools = [];
-    this.answerOpen = false;
     this.menuOpen = false;
     this.el = document.createElement("section");
     this.el.className = "card";
@@ -50,8 +49,15 @@ export class Card {
     this.$(".name").textContent = this.name;
     this.$(".name").title = this.root;
     this.$(".agent").onchange = (e) => this.onAgentPick(e.target.value);
-    this.$(".b-close").onclick = () => app.closeCard(this);
     this.$(".b-restart").onclick = () => this.restart();
+    this.$(".b-shell").onclick = () => this.toggleShell();
+    const grip = this.$(".shell-grip");
+    grip.onpointerdown = (e) => {
+      grip.setPointerCapture(e.pointerId);
+      const box = this.$(".shell"), bottom = box.getBoundingClientRect().bottom;
+      grip.onpointermove = (m) => { box.style.height = `${Math.max(60, bottom - m.clientY)}px`; };
+      grip.onpointerup = () => { grip.onpointermove = grip.onpointerup = null; };
+    };
     this.$(".b-gui").onclick = () => this.toggleView();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
     const spec = this.$(".m-spec");
@@ -69,8 +75,6 @@ export class Card {
       onOutput: () => this.onOutput(),
       onExit: (code, err) => this.onExit(code, err),
     });
-    const summary = this.$(".summary");
-    summary.addEventListener("keydown", (e) => e.key === "Enter" && e.target === summary && this.toggleAnswer());
     // Keep "N분째" fresh while the agent works.
     this.clock = setInterval(() => this.status === "working" && this.updateView(), 20000);
     this.setDensity("full");
@@ -127,13 +131,12 @@ export class Card {
     this.app.renderStrip();
   }
 
-  /** In summary mode the summary always covers the CLI; only agents without hooks show the raw CLI. */
+  /** In GUI mode the GUI view covers the CLI; only agents without hooks show the raw CLI. */
   updateView() {
     const box = this.$(".summary");
-    const hasTurn = this.hooks && this.status !== "starting";
     // While the CLI boots, cover its raw startup output with a loading screen.
-    const loading = this.view === "summary" && this.status === "starting";
-    const show = (this.view === "summary" && hasTurn) || loading;
+    const loading = this.view === "gui" && this.status === "starting";
+    const show = this.view === "gui" && this.hooks;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
     this.$(".b-gui").hidden = this.view !== "cli" || !this.hooks;
@@ -143,20 +146,15 @@ export class Card {
     this.updatePeek();
   }
 
-  get summaryShown() {
+  get guiShown() {
     return !this.$(".summary").hidden;
   }
 
   toggleView() {
-    this.view = this.view === "summary" ? "cli" : "summary";
+    this.view = this.view === "gui" ? "cli" : "gui";
     this.updateView();
-    if (this.summaryShown) this.$(".summary").focus();
+    if (this.guiShown) this.$(".summary").focus();
     else this.agent.term.focus();
-  }
-
-  toggleAnswer() {
-    this.answerOpen = !this.answerOpen;
-    this.updateView();
   }
 
   /** Claude's permission menu: Enter takes the highlighted "Yes", Esc rejects. */
@@ -209,10 +207,9 @@ export class Card {
       this.turnSeq = (this.turnSeq ?? 0) + 1;
       this.turnTools = [];
       this.turnStart = Date.now();
-      this.answerOpen = false;
       // The deck's own handoff/seed prompts are not the user's request.
       this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
-      this.summary = this.turn = null;
+      this.turn = null;
     }
     if (event === "tool") {
       this.lastTool = data;
@@ -227,12 +224,12 @@ export class Card {
   }
 
   /**
-   * Turn finished: read what the agent did from its transcript and summarize it.
-   * The stop hook can fire before the final answer is flushed to the transcript, so read twice.
+   * Turn finished: read the agent's answer, the last request and context size from the transcript.
+   * The stop hook can fire before the transcript is flushed, so read twice.
    */
   async finishTurn() {
     const turnAtStop = this.turnSeq;
-    const progress = await this.loadProgress();
+    this.setStatus("done", "완료");
     for (const wait of [300, 1500]) {
       await new Promise((r) => setTimeout(r, wait));
       if (turnAtStop !== this.turnSeq) return; // the user already started the next turn
@@ -241,8 +238,7 @@ export class Card {
       // The deck's own handoff/seed prompts are not the user's request.
       if (turn?.prompt && !turn.prompt.includes("[mygdeck]")) this.lastAsk = turn.prompt;
       this.contextTokens = turn?.context_tokens ?? null;
-      this.summary = summarizeTurn(turn ?? { texts: [], tools: [] }, progress);
-      this.setStatus(this.summary.state, this.summary.line);
+      this.updateView();
     }
     this.afterTurn();
   }
@@ -324,15 +320,6 @@ export class Card {
     this.agent.command = this.launchCommand();
     this.composer = new Composer(this, this.$(".composer"));
     this.renderAgentPick();
-  }
-
-  /** Big picture: the work log if there is one, else the spec's own checklist. */
-  async loadProgress() {
-    const log = await invoke("read_file", { root: this.root, rel: ".mygdeck/progress.md" }).catch(() => null);
-    const fromLog = parseProgress(log, "progress");
-    if (fromLog) return fromLog;
-    const spec = await invoke("read_spec", { root: this.root, preferred: this.cfg.spec_file ?? null }).catch(() => null);
-    return parseProgress(spec?.content, "spec");
   }
 
   /** Stop the agent's current work: the adapter's interrupt key (Esc for Claude Code). */
@@ -443,8 +430,8 @@ export class Card {
   }
 
   focusDefault() {
-    // With the summary on top, keystrokes must not go to a hidden CLI.
-    if (this.density === "full" && !this.viewer.isOpen && !this.summaryShown) this.agent.term.focus();
+    // With the GUI view on top, keystrokes must not go to a hidden CLI.
+    if (this.density === "full" && !this.viewer.isOpen && !this.guiShown) this.agent.term.focus();
     else this.composer.focus();
   }
 

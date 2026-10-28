@@ -4,13 +4,11 @@ let pool = false;
 /** True when at least one free connection has a model: the question paths can answer. */
 export const poolReady = () => pool;
 export async function refreshPool() {
-  await invoke("ai_detect").catch(() => {});
   pool = (await invoke("ai_list").catch(() => [])).some((c) => c.pooled);
 }
 
 /** Presets fill the form; the key is the only thing the user has to type (spec 4.5). */
 const PRESETS = [
-  { name: "Ollama (로컬)", kind: "openai", base_url: "http://localhost:11434/v1", free: true },
   { name: "OpenAI", kind: "openai", base_url: "https://api.openai.com/v1" },
   { name: "Anthropic", kind: "anthropic", base_url: "https://api.anthropic.com/v1" },
   { name: "Gemini", kind: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", free: true },

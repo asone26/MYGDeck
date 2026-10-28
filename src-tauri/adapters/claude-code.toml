@@ -1,5 +1,5 @@
 name = "claude-code"
-launch = "claude"
+launch = "claude --model opus --effort medium"
 # {settings} is replaced with the deck's hook settings file (status badges, spec 5.3).
 hook_args = "--settings {settings}"
 mention = "@{path}"
@@ -17,4 +17,4 @@ commands = [
 ]
 # Model the router switches to for design / hard-debugging inputs, and the one it returns to (spec 4.3).
 deep_model = "opus"
-base_model = "default"
+base_model = "opus"

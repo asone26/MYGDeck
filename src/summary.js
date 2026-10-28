@@ -7,7 +7,6 @@ const STATE = {
   working: ["⏳", "진행 중"],
   waiting: ["⏸", "대기"],
   done: ["✅", "완료"],
-  failed: ["❌", "실패"],
   exited: ["⏹", "종료됨"],
 };
 
@@ -33,13 +32,12 @@ function minutes(since) {
 }
 
 /**
- * Summary card over the CLI (spec 3.2 ④-1), top to bottom:
- * what happened → can it be trusted → where are we.
+ * GUI view over the CLI (spec 3.2 ④-1): state, the user's request, live steps, permission buttons,
+ * and when the turn ends the agent's own answer as-is (no generated summary).
  * Agent text is set with textContent; only the answer markdown is rendered, sanitized.
  */
 export function renderSummary(card, box) {
   const st = card.status;
-  const s = card.summary;
   box.textContent = "";
   const [icon, label] = STATE[st] ?? ["", ""];
   const head = el("div", "s-head");
@@ -60,7 +58,7 @@ export function renderSummary(card, box) {
   }
 
   // The user's own instruction stays on top while it runs and after it ends.
-  if (card.turnAsk && st !== "exited") box.append(el("div", "s-ask", `내 지시: ${card.turnAsk}`));
+  if (card.turnAsk && st !== "exited") box.append(el("div", "s-ask", card.turnAsk));
 
   if (st === "working") {
     box.append(el("div", "s-line", card.statusText));
@@ -76,24 +74,11 @@ export function renderSummary(card, box) {
       button("거부", () => card.answerPermission(false)),
     );
     box.append(next);
-  } else if (st === "exited") {
+  } else if (card.turn?.texts?.length && st !== "exited") {
+    box.append(answer(card.turn.texts));
+  } else {
     box.append(el("div", "s-line", card.statusText));
-  } else if (s) {
-    const line = el("div", "s-line clickable", s.line);
-    line.title = "눌러서 AI 답변 보기 (Enter)";
-    line.onclick = () => card.toggleAnswer();
-    box.append(line);
-    if (s.what) box.append(el("div", "s-what", s.what));
-    if (s.cause) box.append(el("div", "s-cause", `원인: ${s.cause}`));
-    if (s.big) box.append(el("div", "s-big", s.big));
   }
-
-  const acts = el("div", "s-acts");
-  if (card.turn?.texts?.length && st !== "working") acts.append(button(card.answerOpen ? "답변 접기" : "답변 보기", () => card.toggleAnswer()));
-  if (acts.childElementCount) box.append(acts);
-
-  if (card.answerOpen && card.turn?.texts?.length) box.append(answer(card.turn.texts));
-
 }
 
 function answer(texts) {
@@ -105,11 +90,7 @@ function answer(texts) {
 
 /** Short lines for compact cards, the side column and the overview. */
 export function summaryLines(card) {
-  const s = card.summary;
   if (card.status === "working") return [card.statusText, ...card.turnTools.slice(-2)];
   if (card.status === "waiting") return [card.statusText, permissionLine(card.lastTool?.tool, card.lastTool?.detail)];
-  if (s && (card.status === "done" || card.status === "failed")) {
-    return [s.line, s.cause ? `원인: ${s.cause}` : ""].filter(Boolean);
-  }
   return null;
 }

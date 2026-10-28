@@ -137,10 +137,9 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="ct"></span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="닫기 (Alt+W)">×</span>`;
     b.querySelector(".cn").textContent = c.name;
-    b.querySelector(".ct").textContent = c.statusText;
-    b.onclick = () => setActive(i);
+    b.onclick = (e) => (e.target.classList.contains("cx") ? closeCard(c) : setActive(i));
     chips.append(b);
   });
   $("count").textContent = app.cards.length ? `${app.cards.length}개${waiting ? ` · ${waiting}개 대기` : ""}` : "";

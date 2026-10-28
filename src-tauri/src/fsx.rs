@@ -175,32 +175,25 @@ fn run_git(root: &str, args: &[&str]) -> Result<String, String> {
     if out.status.success() { Ok(text) } else { Err(text.trim().to_string()) }
 }
 
-const MARK: &str = "mygdeck";
-
-/// "지금 상태 저장": commit every change as a save point.
+/// Diff of tracked changes, the input for an auto commit message (empty before the first commit).
 #[tauri::command]
-pub fn git_save(root: String, label: String) -> Result<String, String> {
+pub fn git_diff(root: String) -> String {
+    run_git(&root, &["diff", "HEAD"]).unwrap_or_default()
+}
+
+/// "커밋": commit every change (untracked files too).
+#[tauri::command]
+pub fn git_save(root: String, message: String) -> Result<String, String> {
     run_git(&root, &["add", "-A"])?;
-    run_git(&root, &["commit", "-m", &format!("{MARK} 저장점: {label}")])
+    run_git(&root, &["commit", "-m", &message])
 }
 
-/// "되돌리기": park all changes (untracked files too) in a stash instead of deleting them.
+/// "푸시": push; a branch without upstream gets one on origin.
 #[tauri::command]
-pub fn git_park(root: String, label: String) -> Result<String, String> {
-    run_git(&root, &["stash", "push", "--include-untracked", "-m", &format!("{MARK} 되돌리기: {label}")])
-}
-
-/// "되살리기": bring back the most recent change set parked by the deck.
-#[tauri::command]
-pub fn git_unpark(root: String) -> Result<String, String> {
-    let list = run_git(&root, &["stash", "list", "--format=%gd %s"])?;
-    let entry = list
-        .lines()
-        .find(|l| l.contains(&format!("{MARK} 되돌리기")))
-        .and_then(|l| l.split_whitespace().next())
-        .ok_or("되살릴 내용이 없습니다")?
-        .to_string();
-    run_git(&root, &["stash", "pop", &entry])
+pub fn git_push(root: String) -> Result<String, String> {
+    run_git(&root, &["push"]).or_else(|e| {
+        if e.contains("upstream") { run_git(&root, &["push", "-u", "origin", "HEAD"]) } else { Err(e) }
+    })
 }
 
 #[derive(Serialize)]
@@ -259,27 +252,26 @@ mod tests {
     }
 
     #[test]
-    fn park_and_unpark_keep_changes() {
-        let dir = std::env::temp_dir().join(format!("mygdeck-git-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+    fn commit_then_push_sets_upstream() {
+        let base = std::env::temp_dir().join(format!("mygdeck-git-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, remote) = (base.join("work"), base.join("remote.git"));
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+        run_git(&remote.to_string_lossy(), &["init", "-q", "--bare"]).unwrap();
         let root = dir.to_string_lossy().to_string();
         let g = |args: &[&str]| run_git(&root, args).unwrap();
         g(&["init", "-q"]);
         g(&["config", "user.email", "t@t"]);
         g(&["config", "user.name", "t"]);
+        g(&["remote", "add", "origin", &remote.to_string_lossy()]);
         std::fs::write(dir.join("a.txt"), "v1").unwrap();
         git_save(root.clone(), "first".into()).unwrap();
         std::fs::write(dir.join("a.txt"), "v2").unwrap();
-        std::fs::write(dir.join("new.txt"), "n").unwrap();
-        git_park(root.clone(), "test".into()).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v1");
-        assert!(!dir.join("new.txt").exists());
-        git_unpark(root.clone()).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v2");
-        assert!(dir.join("new.txt").exists());
-        assert!(git_unpark(root.clone()).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(git_diff(root.clone()).contains("+v2"));
+        git_push(root.clone()).unwrap();
+        assert!(g(&["log", "-1", "--format=%s", "@{u}"]).contains("first"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
