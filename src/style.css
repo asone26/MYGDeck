@@ -73,6 +73,15 @@ button:hover { border-color: #3a4150; }
 .card.active { border-color: var(--pc); }
 .card[data-status="waiting"] { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: inset 0 0 0 2px var(--warn); } }
+/* Working: a light bar sweeps along the header's bottom edge. */
+.card[data-status="working"] .head { position: relative; }
+.card[data-status="working"] .head::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--work), transparent) 0 0 / 40% 100% no-repeat;
+  animation: sweep 1.2s linear infinite;
+}
+@keyframes sweep { from { background-position: -70% 0; } to { background-position: 170% 0; } }
+@media (prefers-reduced-motion: reduce) { .card[data-status="working"] .head::after { animation: none; background-size: 100% 100%; } }
 .head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .head .idx { color: var(--muted); }
 .head .name { overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
@@ -109,7 +118,6 @@ button.stop { border-color: var(--bad); color: var(--bad); }
 }
 .s-loading { margin: auto; color: var(--muted); font-size: 14px; }
 .s-head { display: flex; align-items: baseline; gap: 10px; }
-.s-cli { margin-left: auto; font-size: 12px; opacity: 0.85; }
 .s-state { font-size: 15px; font-weight: 700; }
 .card[data-status="waiting"] .s-state { color: var(--warn); }
 .card[data-status="working"] .s-state { color: var(--work); }

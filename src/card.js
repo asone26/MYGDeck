@@ -14,7 +14,8 @@ const TEMPLATE = `
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
-  <button class="b-shell" title="터미널 열기/닫기 (Alt+T)">터미널</button>
+  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기 (Alt+C)</button>
+  <button class="b-shell" title="터미널 열기/닫기 (Alt+T)">터미널 (Alt+T)</button>
 </div>
 <div class="mods">
   <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
@@ -59,6 +60,7 @@ export class Card {
       grip.onpointerup = () => { grip.onpointermove = grip.onpointerup = null; };
     };
     this.$(".b-gui").onclick = () => this.toggleView();
+    this.$(".b-cli").onclick = () => this.toggleView();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
     const spec = this.$(".m-spec");
     spec.addEventListener("toggle", () => spec.open && this.loadSpec());
@@ -123,9 +125,11 @@ export class Card {
     Object.assign(this, { status, statusText: text });
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
-    this.$(".badge").textContent = BADGE[status];
-    this.$(".stext").textContent = text;
-    this.$(".stext").title = text;
+    // Idle needs no header badge or text; the GUI view already says so.
+    const shown = status === "idle" ? "" : text;
+    this.$(".badge").textContent = status === "idle" ? "" : BADGE[status];
+    this.$(".stext").textContent = shown;
+    this.$(".stext").title = shown;
     this.composer.setBusy(status === "working" || status === "waiting");
     this.updateView();
     this.app.renderStrip();
@@ -139,6 +143,7 @@ export class Card {
     const show = this.view === "gui" && this.hooks;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
+    this.$(".b-cli").hidden = !show;
     this.$(".b-gui").hidden = this.view !== "cli" || !this.hooks;
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);

@@ -46,9 +46,6 @@ export function renderSummary(card, box) {
   const limit = card.adapter?.context_limit;
   if (card.rotating) head.append(el("span", "s-time", "· 새 세션으로 이어가는 중"));
   else if (limit && card.contextTokens) head.append(el("span", "s-time", `· 컨텍스트 ${Math.round((card.contextTokens / limit) * 100)}%`));
-  const cli = button("CLI 보기 (Alt+C)", () => card.toggleView());
-  cli.classList.add("s-cli");
-  head.append(cli);
   box.append(head);
   // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
   if (card.menuOpen && st !== "waiting") {
@@ -76,7 +73,7 @@ export function renderSummary(card, box) {
     box.append(next);
   } else if (card.turn?.texts?.length && st !== "exited") {
     box.append(answer(card.turn.texts));
-  } else {
+  } else if (card.statusText !== label) {
     box.append(el("div", "s-line", card.statusText));
   }
 }

@@ -11,8 +11,7 @@ export class Composer {
     const a = card.adapter;
     el.innerHTML = `<span class="ptag"></span><select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
-      <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>
-      <button class="send" title="전송 (Enter)">↵</button>`;
+      <button class="stop" title="작업 중지 (Alt+X)" hidden>■ 중지</button>`;
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
     el.querySelector(".ptag").textContent = card.name;
@@ -41,7 +40,6 @@ export class Composer {
 
     this.ta.addEventListener("keydown", (e) => this.onKey(e));
     this.ta.addEventListener("input", () => this.update());
-    el.querySelector(".send").onclick = () => this.send();
     this.ta.addEventListener("paste", (e) => {
       const file = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
       if (!file) return; // plain text pastes as usual
