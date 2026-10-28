@@ -165,6 +165,24 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 /** On-screen markers of an interactive CLI menu the user must answer in the raw CLI. */
 export const MENU = /Enter to confirm|Esc to cancel|❯\s*\d+\.|\(y\/n\)|\[y\/N\]|\[Y\/n\]/i;
 
+/**
+ * Choices of the on-screen CLI menu, as { label, keys } to type into the CLI.
+ * Numbered menus take the last "1. 2. 3." run (a number key picks it); y/n prompts get Yes/No.
+ */
+export function menuChoices(lines) {
+  let opts = [];
+  for (const l of lines) {
+    const m = /^(?:[❯>›]\s*)?(\d)\.\s+(.+)$/.exec(l);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n === 1) opts = [];
+    if (n === opts.length + 1) opts.push({ label: m[2], keys: m[1] });
+  }
+  if (opts.length) return opts;
+  if (/\(y\/n\)|\[y\/N\]|\[Y\/n\]/i.test(lines.at(-1) ?? "")) return [{ label: "Yes", keys: "y\r" }, { label: "No", keys: "n\r" }];
+  return [];
+}
+
 /** Plain-language line for a permission prompt, from the last tool the agent tried. */
 export function permissionLine(tool, detail) {
   if (!tool) return "에이전트가 허용을 기다립니다";

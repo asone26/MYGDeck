@@ -55,14 +55,21 @@ export function renderSummary(card, box) {
 function renderCurrent(card, box, st) {
   const [icon, label] = STATE[st] ?? ["", ""];
   const head = el("div", "s-head");
-  head.append(el("span", "s-state", `${icon} ${label}`));
+  if (st === "done") head.append(el("span", "s-state", `${icon} ${label}`)); // only "done" is worth a headline
   if (st === "working" && card.turnStart) head.append(el("span", "s-time", minutes(card.turnStart)));
   if (card.rotating) head.append(el("span", "s-time", "· 새 세션으로 이어가는 중"));
   box.append(head);
   // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
   if (card.menuOpen && st !== "waiting") {
     const menu = el("div", "s-next");
-    menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Ctrl+.)", () => card.toggleView(), "ok"));
+    const choices = card.menuChoices ?? [];
+    if (choices.length) {
+      menu.append(el("span", "", "선택하세요:"));
+      for (const c of choices) menu.append(button(c.label, () => card.agent.write(c.keys)));
+      menu.append(button("취소", () => card.agent.write("\x1b")));
+    } else {
+      menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Ctrl+.)", () => card.toggleView(), "ok"));
+    }
     box.append(menu);
   }
 

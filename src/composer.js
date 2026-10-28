@@ -10,7 +10,7 @@ export class Composer {
     this.el = el;
     const a = card.adapter;
     el.innerHTML = `<select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
-      <span class="route" hidden></span><div class="cbox"><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
+      <span class="route" hidden></span><div class="cbox"><div class="thumbs"></div><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
       <button class="stop" title="작업 중지 (Ctrl+Q)" hidden>■ 중지</button>`;
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
@@ -18,6 +18,7 @@ export class Composer {
     this.ta.placeholder = `무엇을 할까요?`;
     this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)";
     this.slash = el.querySelector(".slash");
+    this.thumbs = el.querySelector(".thumbs");
     this.sel = 0;
 
     const select = el.querySelector(".model");
@@ -45,7 +46,13 @@ export class Composer {
       e.preventDefault();
       file.arrayBuffer()
         .then((buf) => invoke("save_paste", { bytes: Array.from(new Uint8Array(buf)), ext: file.type.split("/")[1].replace("jpeg", "jpg") }))
-        .then((path) => this.insert(path))
+        .then((path) => {
+          const img = document.createElement("img");
+          img.src = URL.createObjectURL(file);
+          img.title = img.dataset.path = path;
+          this.thumbs.append(img);
+          this.insert(path);
+        })
         .catch((err) => message(`이미지 붙여넣기 실패: ${err}`, { kind: "error" }));
     });
     el.addEventListener("dragover", (e) => e.preventDefault());
@@ -88,6 +95,13 @@ export class Composer {
     this.ta.style.height = Math.min(this.ta.scrollHeight + border, 140) + "px";
     this.ta.style.overflowY = this.ta.scrollHeight > 140 ? "auto" : "hidden";
     const v = this.ta.value;
+    // A preview lives as long as its path is still in the box (deleted or sent → gone).
+    for (const img of [...this.thumbs.children]) {
+      if (!v.includes(img.dataset.path)) {
+        URL.revokeObjectURL(img.src);
+        img.remove();
+      }
+    }
     const cmds = this.card.adapter?.commands ?? [];
     if (/^\/\S*$/.test(v) && cmds.length) this.showSlash(cmds.filter((c) => c.startsWith(v)));
     else this.slash.hidden = true;

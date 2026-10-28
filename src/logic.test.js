@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
+import { permissionLine, MENU, menuChoices,autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -119,5 +119,11 @@ test("menus and permission lines", () => {
   assert.ok(MENU.test("❯ 1. Yes, switch to Haiku"));
   assert.ok(MENU.test("Enter to confirm · Esc to cancel"));
   assert.ok(!MENU.test("The command ran and printed ok."));
+  assert.deepEqual(menuChoices(["1. old list item", "Pick a model", "❯ 1. Opus", "2. Haiku", "Enter to confirm"]), [
+    { label: "Opus", keys: "1" },
+    { label: "Haiku", keys: "2" },
+  ]);
+  assert.deepEqual(menuChoices(["Overwrite? (y/n)"]).map((c) => c.keys), ["y\r", "n\r"]);
+  assert.deepEqual(menuChoices(["just text"]), []);
   assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });

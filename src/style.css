@@ -246,6 +246,9 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
   background: var(--bg); color: var(--fg); border: 1px solid var(--line-2); border-radius: 8px;
   padding: 6px 10px; font: 14px/1.45 var(--sans);
 }
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.thumbs:empty { display: none; }
+.thumbs img { height: 64px; max-width: 160px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line-2); }
 .composer textarea::placeholder { color: var(--faint); }
 .composer textarea:focus { outline: none; border-color: color-mix(in srgb, var(--pc) 70%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc) 15%, transparent); }
 .composer select { height: var(--row); box-sizing: border-box; background: var(--raised); color: var(--muted); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px 6px; font: 13px var(--sans); cursor: pointer; }

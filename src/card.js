@@ -6,7 +6,7 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, ROTATE_AT, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
+import { BADGE, MENU, ROTATE_AT, menuChoices, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -43,6 +43,7 @@ export class Card {
     this.turnTools = [];
     this.history = []; // finished turns { ask, texts }, shown above the current one in the GUI view
     this.menuOpen = false;
+    this.menuChoices = [];
     this.el = document.createElement("section");
     this.el.className = "card";
     this.el.style.setProperty("--pc", this.color);
@@ -193,9 +194,12 @@ export class Card {
     if (!this.peekTimer) {
       this.peekTimer = setTimeout(() => {
         this.peekTimer = null;
-        const menu = MENU.test(this.agent.lastLines(8).join("\n"));
-        if (menu !== this.menuOpen) {
+        const lines = this.agent.lastLines(15);
+        const menu = MENU.test(lines.slice(-8).join("\n"));
+        const choices = menu ? menuChoices(lines) : [];
+        if (menu !== this.menuOpen || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {
           this.menuOpen = menu;
+          this.menuChoices = choices;
           this.updateView();
         } else this.updatePeek();
         this.app.onPeek(this);
