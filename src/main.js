@@ -66,7 +66,7 @@ function addCard(cfg, persist = true) {
 }
 
 async function addProject() {
-  const dir = await openDialog({ directory: true, title: "프로젝트 폴더 선택" }).catch(() => null);
+  const dir = await openDialog({ directory: true, title: "프로젝트 폴더 선택", defaultPath: "C:\\Project" }).catch(() => null);
   if (typeof dir !== "string") return;
   const same = (p) => p.replace(/[\\/]+$/, "").toLowerCase() === dir.replace(/[\\/]+$/, "").toLowerCase();
   const existing = app.cards.findIndex((c) => same(c.root));
@@ -129,9 +129,7 @@ function setActive(i, focus = true) {
 function renderStrip() {
   const chips = $("chips");
   chips.textContent = "";
-  let waiting = 0;
   app.cards.forEach((c, i) => {
-    if (c.status === "waiting") waiting++;
     const b = document.createElement("button");
     b.className = "chip" + (i === app.active ? " on" : "");
     b.dataset.status = c.status;
@@ -142,7 +140,6 @@ function renderStrip() {
     b.onclick = (e) => (e.target.classList.contains("cx") ? closeCard(c) : setActive(i));
     chips.append(b);
   });
-  $("count").textContent = app.cards.length ? `${app.cards.length}개${waiting ? ` · ${waiting}개 대기` : ""}` : "";
 }
 
 function closeOverlay() {

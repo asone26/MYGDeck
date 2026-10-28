@@ -4,7 +4,8 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { isDeckKey } from "./logic.js";
 
-const THEME = { background: "#14161b", foreground: "#d7dae0", cursor: "#d7dae0", selectionBackground: "#3a4150" };
+// keep in sync with --panel / --fg in style.css
+const THEME = { background: "#111419", foreground: "#e3e6eb", cursor: "#6aa8ff", cursorAccent: "#111419", selectionBackground: "#2b3a55" };
 let seq = 0;
 
 /** Live sessions by PTY id, so backend events can find their terminal. */
