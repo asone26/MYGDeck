@@ -2,17 +2,15 @@
 
 /** Auto preset (spec 3.0 ⑥): grid shape for the cards shown at full size. */
 export function autoLayout(n) {
-  return ["one", "one", "two", "three", "four"][n] ?? "many";
+  return ["one", "one", "two", "three"][n] ?? "many";
 }
 
 /**
  * Which cards get the main area and which are stacked in the narrow side column.
- * Up to 4 projects: full-size cards share the main area, shrunk ones move aside.
- * 5 or more: only the active card is large (Focus). Returns index lists.
+ * Full-size cards share the main area (it scrolls sideways past 3), shrunk ones move aside.
  */
 export function splitDeck(densities, active) {
   const all = densities.map((_, i) => i);
-  if (densities.length >= 5) return { main: [active], side: all.filter((i) => i !== active) };
   const main = all.filter((i) => densities[i] === "full");
   if (!main.length) return { main: all, side: [] };
   return { main, side: all.filter((i) => densities[i] !== "full") };
@@ -36,7 +34,7 @@ export function projectColor(name, used = []) {
   return colors[h % colors.length];
 }
 
-export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", done: "[v]", failed: "[x]", exited: "[off]" };
+export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", failed: "[x]", exited: "[off]" };
 
 const PERMISSION = /permission|approve|허용|승인/i;
 

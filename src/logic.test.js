@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { permissionLine, MENU, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
 
 test("auto layout follows project count", () => {
-  assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "four", "many"]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
 });
 
-test("shrunk cards move aside, 5+ projects focus on the active one", () => {
+test("shrunk cards move aside, many projects stay full-size", () => {
   assert.deepEqual(splitDeck(["full", "compact", "full"], 0), { main: [0, 2], side: [1] });
   assert.deepEqual(splitDeck(["mini", "compact"], 1), { main: [0, 1], side: [] });
-  assert.deepEqual(splitDeck(Array(5).fill("full"), 3), { main: [3], side: [0, 1, 2, 4] });
+  assert.deepEqual(splitDeck(Array(5).fill("full"), 3), { main: [0, 1, 2, 3, 4], side: [] });
 });
 
 test("hook events map to card status", () => {

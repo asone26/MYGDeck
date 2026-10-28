@@ -58,11 +58,39 @@ function adapterFor(cfg) {
 function addCard(cfg, persist = true) {
   const card = new Card(app, cfg, adapterFor(cfg));
   app.cards.push(card);
+  dragToSwap(card);
   app.active = app.cards.length - 1;
   layout();
   // Start after layout so the terminal knows its real size.
   requestAnimationFrame(() => card.start());
   if (persist) save();
+}
+
+/** Drag a card by its header onto another card to swap their places. */
+function dragToSwap(card) {
+  const head = card.el.querySelector(".head");
+  head.draggable = true;
+  head.ondragstart = (e) => {
+    e.dataTransfer.setData("text/x-card", String(app.cards.indexOf(card)));
+    e.dataTransfer.effectAllowed = "move";
+  };
+  card.el.ondragover = (e) => {
+    if (!e.dataTransfer.types.includes("text/x-card")) return;
+    e.preventDefault();
+    card.el.classList.add("drop");
+  };
+  card.el.ondragleave = (e) => !card.el.contains(e.relatedTarget) && card.el.classList.remove("drop");
+  card.el.ondrop = (e) => {
+    card.el.classList.remove("drop");
+    const i = Number(e.dataTransfer.getData("text/x-card"));
+    const j = app.cards.indexOf(card);
+    if (!app.cards[i] || i === j) return;
+    e.preventDefault();
+    [app.cards[i], app.cards[j]] = [app.cards[j], app.cards[i]];
+    app.active = j;
+    layout();
+    save();
+  };
 }
 
 async function addProject() {
@@ -93,8 +121,6 @@ function save() {
 
 function layout() {
   const { main, side } = splitDeck(app.cards.map((c) => c.density), app.active);
-  // In Focus (5+ projects) the one large card must show its CLI even if it was shrunk earlier.
-  if (side.length && main.length === 1 && app.cards[main[0]].density !== "full") app.cards[main[0]].setDensity("full");
   place($("grid"), main);
   place($("side"), side);
   $("grid").dataset.layout = autoLayout(main.length);
@@ -168,7 +194,7 @@ function renderOverview() {
     t.style.setProperty("--pc", c.color);
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
     t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
-    t.querySelector(".cb").textContent = BADGE[c.status];
+    t.querySelector(".cb").textContent = BADGE[c.status] ?? "";
     t.querySelector(".tt").textContent = c.statusText;
     t.querySelector(".tp").textContent = c.peek.join("\n");
     t.onclick = () => {

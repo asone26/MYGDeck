@@ -12,7 +12,7 @@ import { renderSummary, summaryLines } from "./summary.js";
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span>
+  <span class="badge"></span><span class="stext"></span><span class="ctx" title="컨텍스트 사용량"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
   <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기 (Ctrl+.)</button>
   <button class="b-shell" title="터미널 열기/닫기 (Ctrl+\`)">터미널 (Ctrl+\`)</button>
@@ -127,9 +127,9 @@ export class Card {
     Object.assign(this, { status, statusText: text });
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
-    // Idle needs no header badge or text; the GUI view already says so.
-    const shown = status === "idle" ? "" : text;
-    this.$(".badge").textContent = status === "idle" ? "" : BADGE[status];
+    // Idle/done need no header badge or text; the GUI view already says so.
+    const shown = status === "idle" || status === "done" ? "" : text;
+    this.$(".badge").textContent = status === "idle" ? "" : BADGE[status] ?? "";
     this.$(".stext").textContent = shown;
     this.$(".stext").title = shown;
     this.composer.setBusy(status === "working" || status === "waiting");
@@ -145,6 +145,8 @@ export class Card {
     const show = this.view === "gui" && this.hooks;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
+    const limit = this.adapter?.context_limit;
+    this.$(".ctx").textContent = limit && this.contextTokens ? `${Math.round((this.contextTokens / limit) * 100)}%` : "";
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
