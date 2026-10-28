@@ -135,7 +135,8 @@ input, select, textarea { transition: border-color 0.15s var(--ease), box-shadow
 }
 .head .idx { color: var(--faint); font: 11px var(--mono); }
 .head .name { overflow: hidden; text-overflow: ellipsis; max-width: 40%; font-weight: 600; letter-spacing: -0.01em; }
-.agent { align-self: center; color: var(--muted); background: var(--raised); font-size: 10.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
+/* field-sizing: width follows the shown option, not the longest menu item */
+.agent { field-sizing: content; align-self: center; color: var(--muted); background: var(--raised); font-size: 10.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
 .head .badge { font-size: 12px; }
 .head .stext { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-size: 12px; }
 .head button { padding: 2px 8px; font-size: 12px; background: transparent; border-color: transparent; color: var(--muted); }
@@ -244,6 +245,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .composer select { height: var(--row); box-sizing: border-box; background: var(--raised); color: var(--muted); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px 6px; font: 12px var(--sans); cursor: pointer; }
 .composer select:hover { color: var(--fg); }
 .composer .stop { height: var(--row); box-sizing: border-box; }
+.composer .agent { align-self: flex-end; }
 .slash {
   position: absolute; bottom: 100%; left: 0; right: 0; margin: 0 0 6px; padding: 4px; list-style: none;
   background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; max-height: 220px; overflow: auto; z-index: 5;

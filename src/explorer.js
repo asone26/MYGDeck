@@ -23,6 +23,11 @@ export class Explorer {
       this.render();
     });
     this.list.addEventListener("click", (e) => this.onClick(e));
+    // Double-click a file: open it with the OS default app (HTML → browser).
+    this.list.addEventListener("dblclick", (e) => {
+      const n = e.target.closest("[data-path]");
+      if (n && !n.dataset.dir) invoke("open_file", { root: card.root, rel: n.dataset.path }).catch((err) => this.say(`열기 실패: ${err}`, true));
+    });
     this.list.addEventListener("dragstart", (e) => {
       const p = e.target.closest?.("[data-path]")?.dataset.path;
       if (p) e.dataTransfer.setData("text/plain", mentionFor(card.adapter?.mention, p));

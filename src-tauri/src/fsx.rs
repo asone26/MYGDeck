@@ -228,6 +228,12 @@ pub fn save_paste(bytes: Vec<u8>, ext: String) -> Result<String, String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Open a project file with the OS default app (HTML → browser), like a double-click in Explorer.
+#[tauri::command]
+pub fn open_file(root: String, rel: String) -> Result<(), String> {
+    tauri_plugin_opener::open_path(safe_join(&root, &rel)?, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

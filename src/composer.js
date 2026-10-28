@@ -15,7 +15,7 @@ export class Composer {
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
     this.ta = el.querySelector("textarea");
-    this.ta.placeholder = `${card.name}에게 지시 · / 명령`;
+    this.ta.placeholder = `무엇을 할까요?`;
     this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)";
     this.slash = el.querySelector(".slash");
     this.sel = 0;
