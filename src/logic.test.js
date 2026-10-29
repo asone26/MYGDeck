@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices,autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -129,6 +129,10 @@ test("menus and permission lines", () => {
     { label: "Yes, I trust this folder", keys: ["\x1b[B", "\r"] },
   ]);
   assert.deepEqual(menuChoices(["Overwrite? (y/n)"]).map((c) => c.keys), [["y", "\r"], ["n", "\r"]]);
+  const trust = ["Accessing workspace:", "", "C:\\Project\\MYGStat", "", "Quick safety check: Is this a project", "you trust?", "", "Security guide", "", "❯ No, exit", "  Yes, I trust this folder", "", "Enter to confirm · Esc to cancel"];
+  assert.equal(menuQuestion(trust, menuChoices(trust)), "Accessing workspace:\nC:\\Project\\MYGStat\nQuick safety check: Is this a project you trust?\nSecurity guide");
+  assert.equal(menuQuestion(["Overwrite? (y/n)"], menuChoices(["Overwrite? (y/n)"])), "Overwrite? (y/n)");
+  assert.equal(menuQuestion(["╭───╮", "│ Pick a model │", "│ ❯ 1. Opus │", "╰───╯"], [{ label: "Opus", keys: ["1"] }]), "Pick a model");
   assert.deepEqual(menuChoices(["just text"]), []);
   assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });

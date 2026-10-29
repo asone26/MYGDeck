@@ -191,6 +191,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
   background: color-mix(in srgb, var(--pc) 7%, var(--raised)); border: 1px solid color-mix(in srgb, var(--pc) 22%, var(--line));
 }
 .s-next span { flex: 1; min-width: 160px; }
+.s-next .s-q { flex-basis: 100%; white-space: pre-line; line-height: 1.5; }
 .s-next button.ok { border-color: var(--pc); color: var(--fg); background: color-mix(in srgb, var(--pc) 22%, var(--raised)); font-weight: 600; }
 .s-next button.ok:hover { background: color-mix(in srgb, var(--pc) 32%, var(--raised)); }
 .s-answer { line-height: 1.65; }

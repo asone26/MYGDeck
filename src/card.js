@@ -6,7 +6,7 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, ROTATE_AT, menuChoices, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
+import { BADGE, MENU, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -194,12 +194,14 @@ export class Card {
     if (!this.peekTimer) {
       this.peekTimer = setTimeout(() => {
         this.peekTimer = null;
-        const lines = this.agent.lastLines(15, true);
-        const menu = MENU.test(lines.slice(-8).join("\n"));
+        const lines = this.agent.lastLines(20, true);
+        const menu = MENU.test(lines.filter(Boolean).slice(-8).join("\n"));
         const choices = menu ? menuChoices(lines) : [];
-        if (menu !== this.menuOpen || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {
+        const question = menuQuestion(lines, choices);
+        if (menu !== this.menuOpen || question !== this.menuQuestion || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {
           this.menuOpen = menu;
           this.menuChoices = choices;
+          this.menuQuestion = question;
           this.updateView();
         } else this.updatePeek();
         this.app.onPeek(this);

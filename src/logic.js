@@ -199,6 +199,24 @@ export function menuChoices(lines) {
   return [];
 }
 
+/**
+ * The question above a menu's options (up to 10 lines), so the GUI can ask it before the buttons.
+ * Blank lines split paragraphs; wrapped lines inside one are joined back. A y/n prompt is its own last line.
+ */
+export function menuQuestion(lines, choices) {
+  if (!choices.length) return "";
+  const yn = choices[0].keys[0] === "y";
+  const end = yn ? lines.length : lines.findLastIndex((l) => l.includes(choices[0].label));
+  if (end < 0) return "";
+  const paras = [[]];
+  for (const raw of lines.slice(Math.max(0, end - 10), end)) {
+    const l = raw.replace(/^[\s│┃|]+|[\s│┃|]+$/g, "");
+    if (/^[─━╭╮╰╯┌┐└┘\s]*$/.test(l)) paras.push([]);
+    else paras.at(-1).push(l);
+  }
+  return paras.filter((p) => p.length).map((p) => p.join(" ")).join("\n");
+}
+
 /** Plain-language line for a permission prompt, from the last tool the agent tried. */
 export function permissionLine(tool, detail) {
   if (!tool) return "에이전트가 허용을 기다립니다";

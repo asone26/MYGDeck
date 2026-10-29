@@ -98,7 +98,9 @@ export class Pty {
     const out = [];
     for (let y = b.baseY + b.cursorY; y >= 0 && out.length < n; y--) {
       const raw = b.getLine(y)?.translateToString(true) ?? "";
+      // keepIndent also keeps blank lines between content (paragraph breaks), not the ones below it.
       if (raw.trim()) out.unshift(keepIndent ? raw.trimEnd() : raw.trim());
+      else if (keepIndent && out.length && out[0] !== "") out.unshift("");
     }
     return out;
   }
