@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { lineRange, mentionFor } from "./logic.js";
+import { keyLabel, lineRange, mentionFor } from "./logic.js";
 
 // Syntax highlighting is the largest dependency; load it only when a file is first opened.
 let hljsLoad = null;
@@ -14,7 +14,7 @@ export class Viewer {
     el.tabIndex = -1;
     el.innerHTML = `
       <div class="vbar"><span class="vpath"></span>
-        <button class="v-ins" title="선택한 코드를 입력창에 넣기 (Ctrl+I)">@ 입력창에 넣기</button>
+        <button class="v-ins" title="${keyLabel("선택한 코드를 입력창에 넣기 (Ctrl+I)")}">@ 입력창에 넣기</button>
         <button class="v-close" title="닫기 (Esc)">×</button></div>
       <div class="vbody"><pre class="gutter"></pre><pre class="code"><code class="hljs"></code></pre></div>`;
     this.code = el.querySelector("code");

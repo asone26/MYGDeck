@@ -8,6 +8,8 @@
 **`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열린다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보인다). 처음 한 번은 자동으로 빌드한다(몇 분). 코드를 고친 뒤에는 `mygdeck.bat rebuild`.
 프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Ctrl+'`)로 폴더를 골라 추가한다.
 
+**macOS**: `mygdeck.command`를 더블클릭한다(`mygdeck.bat`과 같은 일을 한다. 폴더를 넘기려면 터미널에서 `./mygdeck.command ~/work/a`). 처음 한 번은 Xcode 명령줄 도구(`xcode-select --install`), Rust, Node가 있어야 한다. Finder에서 연 앱도 로그인 셸(`$SHELL`)의 PATH를 읽어 오므로 Homebrew·npm으로 설치한 `claude`·`codex`·`git`을 찾는다. 빌드한 앱은 `src-tauri/target/debug/bundle/macos/mygdeck.app`에 생기고, Dock에 고정해 두고 열어도 된다.
+
 개발용 명령:
 
 ```bash
@@ -15,6 +17,7 @@ npm install
 npm run tauri dev                 # 개발 실행 (mygdeck.json의 프로젝트를 연다)
 npm run tauri dev -- -- C:/work/a C:/work/b   # 프로젝트 경로를 직접 넘기기
 npx tauri build --no-bundle       # 실행 파일 빌드 (src-tauri/target/release/mygdeck.exe, mygdeck-cli.exe)
+npx tauri build --bundles app     # macOS: src-tauri/target/release/bundle/macos/mygdeck.app
 ```
 
 프로젝트 목록은 `mygdeck.json`(현재 폴더, 없으면 홈 폴더)에 저장되어 다음 실행 때 그대로 열린다.
@@ -35,6 +38,8 @@ npx tauri build --no-bundle       # 실행 파일 빌드 (src-tauri/target/relea
 
 덱 단축키는 모두 `Ctrl` 조합이다. 나머지 키는 CLI로 그대로 간다.
 
+**macOS**에서는 `Ctrl` 대신 `⌘`를 쓴다(`⌘1~9`, `⌘P`, `⌘.` …). `⌃` 조합은 모두 CLI로 간다. 다만 macOS가 `⌘`로 먼저 가져가는 네 가지는 `⌃`로 남는다: `⌃Space`(다음 대기), `⌃Tab`(포커스 이동), `` ⌃` ``(셸), `⌃Q`(중지). `⌃Space`가 입력 소스 전환에 걸려 있으면 시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스에서 바꾼다. 화면의 단축키 안내도 macOS에서는 `⌘`로 표시된다. `⌘W`는 창을 닫는다(세션은 데몬에서 계속 돈다). 카드 닫기는 탭의 `×`나 `⌘F4`(`fn` 키와 함께).
+
 | 키 | 동작 |
 |---|---|
 | `Ctrl+1~9` / `Ctrl+PageUp·PageDown` | 프로젝트 이동 |
@@ -42,7 +47,7 @@ npx tauri build --no-bundle       # 실행 파일 빌드 (src-tauri/target/relea
 | `Ctrl+0` | 전체 보기 |
 | `Ctrl+=` / `Ctrl+-` | 카드 크기 (Full · Compact · Mini) |
 | `Ctrl+Tab` | 카드 안 포커스 이동 (파일 · CLI · 입력창) |
-| `Ctrl+P` | 파일 빠른 열기 (터미널(CLI·셸)에 포커스가 없을 때) |
+| `Ctrl+P` | 파일 빠른 열기 (터미널(CLI·셸)에 포커스가 없을 때. macOS `⌘P`는 언제나) |
 | `Ctrl+I` | 선택한 내용을 입력창에 넣기: 코드 뷰어 선택은 `@파일 L줄`, 터미널 선택은 코드 블록 |
 | `Ctrl+;` | 스펙 패널 열기/닫기 |
 | `` Ctrl+` `` | 사용자 셸 열기/닫기 |
@@ -57,7 +62,7 @@ npx tauri build --no-bundle       # 실행 파일 빌드 (src-tauri/target/relea
 - 창을 닫거나 새로고침해도 에이전트는 하던 일을 계속한다. 다시 열면 최근 출력(세션당 256 KB)을 되살려 이어 붙는다.
 - 카드를 닫으면(`Ctrl+F4`) 그 프로젝트의 에이전트와 셸이 끝난다. 창도 세션도 없는 상태가 30초 이어지면 데몬도 스스로 끝난다.
 - 재부팅처럼 데몬까지 꺼진 뒤에는 어댑터의 `resume_args`로 프로젝트의 마지막 대화를 다시 연다(Claude Code는 `--continue`). 이어갈 대화가 없으면 새로 시작한다. 이 재부팅 복원 경로는 아직 실제로 돌려 보지 않았다([확인 상태](docs/adapters.md#확인-상태)).
-- 창이 뒤에 있을 때 프로젝트가 승인을 기다리거나 작업을 마치면 Windows 알림과 작업 표시줄 깜빡임으로 알린다. 창으로 돌아오면 그 프로젝트로 바로 이동한다.
+- 창이 뒤에 있을 때 프로젝트가 승인을 기다리거나 작업을 마치면 시스템 알림과 작업 표시줄 깜빡임(macOS는 Dock 아이콘 튀기기)으로 알린다. 창으로 돌아오면 그 프로젝트로 바로 이동한다.
 
 ### 터미널에서 다루기 (`mygdeck-cli`)
 

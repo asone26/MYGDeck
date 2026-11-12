@@ -180,7 +180,7 @@ pub fn default_shell() -> String {
     if cfg!(windows) {
         if find_program("pwsh").is_some() { "pwsh -NoLogo".into() } else { "powershell.exe -NoLogo".into() }
     } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
+        std::env::var("SHELL").unwrap_or_else(|_| if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" }.into())
     }
 }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -52,6 +52,20 @@ test("deck keys work with and without physical key codes", () => {
   // Copy, cut, interrupt and Claude Code's own keys stay with the CLI.
   for (const code of ["KeyC", "KeyX", "KeyO", "KeyT", "KeyV", "KeyJ", "KeyN", "KeyW", "ArrowLeft"]) assert.equal(isDeckKey({ ctrlKey: true, code }), false);
   assert.equal(keyCode({ code: "", key: "3" }), "Digit3");
+});
+
+test("macOS deck keys use Command, except the ones the OS keeps", () => {
+  assert.equal(isDeckKey({ metaKey: true, code: "KeyI" }, true), true);
+  assert.equal(isDeckKey({ ctrlKey: true, code: "KeyI" }, true), false); // ⌃I goes to the CLI
+  assert.equal(isDeckKey({ metaKey: true, ctrlKey: true, code: "KeyI" }, true), false);
+  assert.equal(isDeckKey({ metaKey: true, code: "KeyC" }, true), false); // ⌘C copies
+  for (const code of ["Space", "Tab", "Backquote", "KeyQ"]) {
+    assert.equal(isDeckKey({ ctrlKey: true, code }, true), true);
+    assert.equal(isDeckKey({ metaKey: true, code }, true), false);
+  }
+  assert.equal(isDeckKey({ metaKey: true, code: "KeyI" }, false), false);
+  assert.equal(keyLabel("Ctrl+Space 다음 · Ctrl+1~9 이동 · Ctrl+` 터미널 (Ctrl+Q) (Ctrl+F4) Ctrl+;", true), "⌃Space 다음 · ⌘1~9 이동 · ⌃` 터미널 (⌃Q) (⌘F4) ⌘;");
+  assert.equal(keyLabel("닫기 (Ctrl+F4)", false), "닫기 (Ctrl+F4)");
 });
 
 test("open projects never share a color", () => {

@@ -9,7 +9,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { Card } from "./card.js";
 import { openConnections, refreshPool } from "./connections.js";
 import { ptys } from "./pty.js";
-import { BADGE, DENSITIES, autoLayout, fuzzyFilter, isDeckKey, keyCode, nextAttention, splitDeck } from "./logic.js";
+import { BADGE, DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
 const deck = $("deck");
@@ -37,6 +37,9 @@ let overlayKind = null;
 let overviewSel = 0;
 
 async function boot() {
+  const addBtn = document.getElementById("add-btn");
+  addBtn.title = keyLabel(addBtn.title);
+  document.querySelectorAll(".keys").forEach((k) => (k.textContent = keyLabel(k.textContent)));
   await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data, !!e.payload.replay));
   await listen("pty-exit", (e) => ptys.get(e.payload.id)?.exited(e.payload.code));
   await listen("daemon-lost", () => [...ptys.values()].forEach((p) => p.exited(null)));
@@ -215,7 +218,7 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="닫기 (Ctrl+F4)">×</span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel("닫기 (Ctrl+F4)")}">×</span>`;
     b.querySelector(".cn").textContent = c.name;
     b.onclick = (e) => (e.target.classList.contains("cx") ? closeCard(c) : setActive(i));
     chips.append(b);
@@ -332,8 +335,8 @@ window.addEventListener(
       overviewSel = (overviewSel + step + app.cards.length) % app.cards.length;
       return renderOverview();
     }
-    // Ctrl+P belongs to the CLI while the terminal has focus (spec 3.3).
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && keyCode(e) === "KeyP" && !e.target.closest?.(".xterm")) {
+    // Ctrl+P belongs to the CLI while the terminal has focus (spec 3.3); ⌘P on macOS never reaches it.
+    if (keyCode(e) === "KeyP" && isDeckMod(e, "KeyP") && (IS_MAC || !e.target.closest?.(".xterm"))) {
       e.preventDefault();
       return quickOpen();
     }

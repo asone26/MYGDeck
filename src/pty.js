@@ -19,7 +19,7 @@ export class Pty {
   constructor(host, { key, cwd, command, onOutput, onExit, scrollback = 5000 }) {
     Object.assign(this, { host, key, cwd, command, onOutput, onExit, alive: false });
     this.term = new Terminal({
-      fontFamily: "'Cascadia Mono', Consolas, 'D2Coding', monospace",
+      fontFamily: "'Cascadia Mono', Consolas, Menlo, 'D2Coding', monospace",
       fontSize: 13,
       cursorBlink: true,
       scrollback,

@@ -169,8 +169,33 @@ export function keyCode(e) {
   return { "=": "Equal", "+": "Equal", "-": "Minus", ".": "Period", ";": "Semicolon", "`": "Backquote", " ": "Space", "'": "Quote" }[k] ?? k;
 }
 
-export function isDeckKey(e) {
-  return !!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && DECK_KEYS.has(keyCode(e));
+/** WKWebView on macOS; Node (tests) and WebView2 are not. */
+export const IS_MAC = /Macintosh|Mac OS X/.test(globalThis.navigator?.userAgent ?? "");
+
+/** On macOS the OS keeps ⌘ with these (app switcher, Spotlight, window cycling, quit), so they stay on ⌃. */
+const MAC_CTRL_KEYS = new Set(["Tab", "Space", "Backquote", "KeyQ"]);
+
+/** Modifier of a deck shortcut: Ctrl everywhere, ⌘ on macOS (⌘ never reaches the CLI there). */
+export function deckMod(code, mac = IS_MAC) {
+  return mac && !MAC_CTRL_KEYS.has(code) ? "meta" : "ctrl";
+}
+
+/** The deck modifier alone is held for `code` (no Alt/Shift, not the other of Ctrl/⌘). */
+export function isDeckMod(e, code = keyCode(e), mac = IS_MAC) {
+  if (e.altKey || e.shiftKey) return false;
+  return deckMod(code, mac) === "meta" ? !!e.metaKey && !e.ctrlKey : !!e.ctrlKey && !e.metaKey;
+}
+
+export function isDeckKey(e, mac = IS_MAC) {
+  const code = keyCode(e);
+  return DECK_KEYS.has(code) && isDeckMod(e, code, mac);
+}
+
+const MAC_LABEL = { Space: "⌃Space", Tab: "⌃Tab", "`": "⌃`", Q: "⌃Q" };
+
+/** "Ctrl+P" in UI text → "⌘P" on macOS ("⌃Space" for the keys that stay on Ctrl). */
+export function keyLabel(text, mac = IS_MAC) {
+  return mac ? text.replace(/Ctrl\+([A-Za-z]\w*|[^\sA-Za-z)]+)/g, (_, k) => MAC_LABEL[k] ?? "⌘" + k) : text;
 }
 
 export const DENSITIES = ["mini", "compact", "full"];

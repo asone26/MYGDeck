@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "@tauri-apps/plugin-dialog";
 import { poolReady } from "./connections.js";
-import { ROUTE_CHIP, nextRoute, routeInput } from "./logic.js";
+import { ROUTE_CHIP, keyLabel, nextRoute, routeInput } from "./logic.js";
 
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
 export class Composer {
@@ -11,7 +11,7 @@ export class Composer {
     const a = card.adapter;
     el.innerHTML = `<select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><div class="thumbs"></div><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
-      <button class="queue" hidden></button><button class="stop" title="작업 중지 (Ctrl+Q)" hidden>■ 중지</button>`;
+      <button class="queue" hidden></button><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>■ 중지</button>`;
     this.queueBtn = el.querySelector(".queue");
     this.queueBtn.onclick = () => card.clearQueue();
     this.renderQueue(); // rebuilt on agent switch: keep showing what is queued
@@ -19,7 +19,7 @@ export class Composer {
     this.stopBtn.onclick = () => card.interrupt();
     this.ta = el.querySelector("textarea");
     this.ta.placeholder = `무엇을 할까요?`;
-    this.ta.title = "Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)";
+    this.ta.title = keyLabel("Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)");
     this.slash = el.querySelector(".slash");
     this.thumbs = el.querySelector(".thumbs");
     this.sel = 0;

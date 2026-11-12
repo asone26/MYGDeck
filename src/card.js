@@ -7,7 +7,7 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
+import { BADGE, MENU, keyLabel, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -19,8 +19,8 @@ const TEMPLATE = `
   <button class="b-shell" title="터미널 열기/닫기">터미널</button>
 </div>
 <div class="mods">
-  <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">Ctrl+P</span></summary><div class="explorer"></div></details>
-  <details class="m-spec"><summary>스펙 <span class="spec-name"></span> <span class="kbd">Ctrl+;</span></summary><div class="spec md"></div></details>
+  <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
+  <details class="m-spec"><summary>스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>

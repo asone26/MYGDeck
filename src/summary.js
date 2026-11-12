@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { permissionLine, replySuggestions } from "./logic.js";
+import { keyLabel, permissionLine, replySuggestions } from "./logic.js";
 
 const STATE = {
   idle: ["💬", "준비됨"],
@@ -69,7 +69,7 @@ function renderCurrent(card, box, st) {
       for (const c of choices) menu.append(button(c.label, () => c.keys.forEach((k, i) => setTimeout(() => card.agent.write(k), i * 60))));
       menu.append(button("취소", () => card.agent.write("\x1b")));
     } else {
-      menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button("CLI 열기 (Ctrl+.)", () => card.toggleView(), "ok"));
+      menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button(keyLabel("CLI 열기 (Ctrl+.)"), () => card.toggleView(), "ok"));
     }
     box.append(menu);
   }
