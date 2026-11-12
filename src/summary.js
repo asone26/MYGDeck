@@ -101,7 +101,14 @@ function renderCurrent(card, box, st) {
     );
     box.append(next);
   } else if (card.turn?.texts?.length && st !== "exited") {
-    box.append(answer(card.turn.texts));
+    const ans = answer(card.turn.texts);
+    // The view is rebuilt often (and the transcript is read twice): the answer rises in once per turn.
+    if (st === "done" && card.revealedSeq !== card.turnSeq) {
+      card.revealedSeq = card.turnSeq;
+      ans.classList.add("enter");
+      head.classList.add("enter");
+    }
+    box.append(ans);
     // The answer asks the user something: one click answers it (A2).
     const replies = st === "done" && !card.menuOpen ? replySuggestions(card.turn.texts) : [];
     if (replies.length) {

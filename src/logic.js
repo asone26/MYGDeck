@@ -16,8 +16,9 @@ export function splitDeck(densities, active) {
   return { main, side: all.filter((i) => densities[i] !== "full") };
 }
 
-// Soft, mid-saturation tones that read well on the dark UI without glowing.
-const COLORS = ["#e3a06b", "#7aa6da", "#86bfa0", "#c79bd9", "#e08c8c", "#d6be76", "#6fbfc0", "#a3a8e8", "#b8c77a", "#e39bb6"];
+// Soft, mid-saturation tones that read well on the dark UI.
+// No reds, ambers or greens: those hues mean failed, waiting and done, and a project must never look like a state.
+const COLORS = ["#7aa6da", "#c79bd9", "#6fbfc0", "#b8c77a", "#e39bb6", "#5ec4e8", "#a98cf0", "#e08fd0", "#9fd172", "#8f97ee"];
 
 /**
  * Per-project color (spec 3.0 ③). The name picks a preferred color so a project usually keeps

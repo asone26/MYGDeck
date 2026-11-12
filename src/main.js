@@ -38,6 +38,96 @@ const app = {
 let overlayKind = null;
 let overviewSel = 0;
 
+// ---- Motion: cards glide to new places, each project lights the sky behind its card ----
+
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+let booting = true; // cards restored at startup come in together once, not one by one
+
+/** FLIP: cards that changed place slide from where they were; new cards rise in. */
+function animateMoves(before) {
+  if (booting || calm.matches) return;
+  for (const [c, r] of before) {
+    if (!c.el.isConnected) continue;
+    if (!r) {
+      c.el.animate([{ opacity: 0, transform: "translateY(16px) scale(0.97)" }, { opacity: 1, transform: "none" }], { duration: 520, easing: EASE });
+      continue;
+    }
+    const n = c.el.getBoundingClientRect();
+    const [dx, dy] = [r.left - n.left, r.top - n.top];
+    if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) c.el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 480, easing: EASE });
+  }
+}
+
+const orbs = new Map(); // key → light element in #aura
+// Lights for the empty deck, in project colors.
+const IDLE_LIGHTS = [["#a98cf0", 0.26, 0.7], ["#7aa6da", 0.74, 0.36], ["#6fbfc0", 0.55, 1.0]];
+
+/** One light per project, centered behind its card; brighter for the active card, amber while it waits. */
+function updateAura() {
+  const lights = app.cards.length
+    ? app.cards.slice(0, 8).map((c, i) => {
+        const r = c.el.getBoundingClientRect();
+        const o = c.status === "waiting" ? 0.85 : i === app.active ? 0.75 : 0.45;
+        return { key: c.id, color: c.color, status: c.status, x: r.left + r.width / 2, y: r.top + r.height * 0.45, s: Math.max(0.35, Math.max(r.width, r.height) / 850), o };
+      })
+    : IDLE_LIGHTS.map(([color, x, y], i) => ({ key: `idle${i}`, color, status: "idle", x: x * innerWidth, y: y * innerHeight, s: 1, o: 0.6 }));
+  const keep = new Set(lights.map((l) => l.key));
+  for (const [key, el] of orbs) {
+    if (keep.has(key) || el.dataset.dead) continue;
+    el.dataset.dead = "1";
+    el.style.setProperty("--o", 0);
+    setTimeout(() => el.dataset.dead && (el.remove(), orbs.delete(key)), 900);
+  }
+  for (const l of lights) {
+    let el = orbs.get(l.key);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "orb";
+      el.style.setProperty("--o", 0); // fade in from nothing at its place
+      el.style.setProperty("--x", `${l.x}px`);
+      el.style.setProperty("--y", `${l.y}px`);
+      $("aura").append(el);
+      orbs.set(l.key, el);
+      el.getBoundingClientRect(); // commit the start state so the fade-in transitions
+    }
+    delete el.dataset.dead;
+    el.dataset.status = l.status;
+    el.style.setProperty("--c", l.color);
+    el.style.setProperty("--x", `${l.x}px`);
+    el.style.setProperty("--y", `${l.y}px`);
+    el.style.setProperty("--s", l.s.toFixed(3));
+    el.style.setProperty("--o", l.o);
+  }
+}
+
+const glider = document.createElement("span");
+glider.className = "glider still";
+glider.setAttribute("aria-hidden", "true");
+
+/** The active chip's lit pill slides to the newly active chip. */
+function moveGlider() {
+  const on = $("chips").querySelector(".chip.on");
+  if (!on) return (glider.style.opacity = 0);
+  const s = $("strip").getBoundingClientRect();
+  const r = on.getBoundingClientRect();
+  glider.style.setProperty("--pc", app.cards[app.active]?.color ?? "var(--work)");
+  Object.assign(glider.style, { opacity: 1, width: `${r.width}px`, height: `${r.height}px`, transform: `translate(${r.left - s.left}px, ${r.top - s.top}px)` });
+  if (glider.classList.contains("still")) requestAnimationFrame(() => requestAnimationFrame(() => glider.classList.remove("still")));
+}
+
+let reflowQueued = false;
+function reflowLights() {
+  if (reflowQueued) return;
+  reflowQueued = true;
+  requestAnimationFrame(() => {
+    reflowQueued = false;
+    updateAura();
+    moveGlider();
+  });
+}
+window.addEventListener("resize", reflowLights);
+
 async function boot() {
   const addBtn = document.getElementById("add-btn");
   addBtn.title = keyLabel(addBtn.title);
@@ -74,6 +164,10 @@ async function boot() {
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
   refreshPool();
   $("add-btn").onclick = addProject;
+  $("add-first").onclick = addProject;
+  $("add-first").querySelector("kbd").textContent = keyLabel("Ctrl+'");
+  $("strip").prepend(glider);
+  $("grid").addEventListener("scroll", reflowLights, { passive: true });
   $("conn-btn").onclick = () => {
     overlayKind = "connections";
     overlay.hidden = false;
@@ -84,6 +178,13 @@ async function boot() {
   for (const s of app.live) if (!app.cards.some((c) => s.id.startsWith(`${c.root}#`))) invoke("pty_kill", { id: s.id }).catch(() => {});
   app.active = 0;
   layout();
+  booting = false;
+  // One orchestrated entrance for the restored deck.
+  if (!calm.matches) {
+    app.cards.forEach((c, i) =>
+      c.el.animate([{ opacity: 0, transform: "translateY(24px) scale(0.98)" }, { opacity: 1, transform: "none" }], { duration: 700, delay: 80 + i * 70, easing: EASE, fill: "backwards" }),
+    );
+  }
   app.cards[0]?.focusDefault();
 }
 
@@ -183,7 +284,11 @@ function openProject(dir) {
 async function closeCard(card) {
   const busy = card.status === "working" || card.status === "waiting";
   if (busy && !(await ask(`${card.name}: 에이전트가 작업 중입니다. 닫으면 작업이 중단됩니다.`, { title: "프로젝트 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "취소" }))) return;
+  if (!calm.matches) {
+    await card.el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(0.96)" }], { duration: 220, easing: "ease-in", fill: "forwards" }).finished.catch(() => {});
+  }
   const i = app.cards.indexOf(card);
+  if (i < 0) return; // closed twice while the exit played
   card.dispose();
   app.cards.splice(i, 1);
   app.active = Math.max(0, Math.min(app.active, app.cards.length - 1));
@@ -197,6 +302,7 @@ function save() {
 }
 
 function layout() {
+  const before = new Map(app.cards.map((c) => [c, c.el.isConnected ? c.el.getBoundingClientRect() : null]));
   const { main, side } = splitDeck(app.cards.map((c) => c.density), app.active);
   place($("grid"), main);
   place($("side"), side);
@@ -207,6 +313,7 @@ function layout() {
   });
   deck.hidden = app.cards.length === 0;
   $("empty").hidden = app.cards.length > 0;
+  animateMoves(before);
   renderStrip();
 }
 
@@ -243,11 +350,14 @@ function renderStrip() {
     b.onclick = (e) => (e.target.closest(".cx") ? closeCard(c) : setActive(i));
     chips.append(b);
   });
+  moveGlider();
+  updateAura();
 }
 
 function closeOverlay() {
   overlay.hidden = true;
   overlay.textContent = "";
+  overlay.classList.remove("still");
   overlayKind = null;
 }
 
@@ -262,6 +372,8 @@ function toggleOverview() {
 
 /** Ctrl+0: every project as a tile on one screen (spec 3.0 ⑦). */
 function renderOverview() {
+  // Rebuilt on every peek and key press: only the first build plays the entrance.
+  overlay.classList.toggle("still", !!overlay.querySelector(".ov"));
   overlay.innerHTML = `<div class="ov"><div class="ov-title">전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기</div><div class="ov-grid"></div></div>`;
   const grid = overlay.querySelector(".ov-grid");
   app.cards.forEach((c, i) => {
@@ -269,6 +381,7 @@ function renderOverview() {
     t.className = "tile" + (i === overviewSel ? " on" : "");
     t.dataset.status = c.status;
     t.style.setProperty("--pc", c.color);
+    t.style.setProperty("--i", i);
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
     t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
     t.querySelector(".cb").innerHTML = statusIcon(c.status);

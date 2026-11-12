@@ -27,7 +27,8 @@ const TEMPLATE = `
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
-<div class="composer"></div>`;
+<div class="composer"></div>
+<div class="ring" aria-hidden="true"></div>`;
 
 let cardSeq = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -174,7 +175,17 @@ export class Card {
     this.el.dataset.status = status;
     // Idle/done need no header badge or text; the GUI view already says so.
     const shown = status === "idle" || status === "done" ? "" : text;
-    this.$(".badge").innerHTML = statusIcon(status);
+    const badge = this.$(".badge");
+    badge.innerHTML = statusIcon(status);
+    // Only a real change pops the icon in; repeats of the same status rebuild it quietly.
+    badge.classList.toggle("pop", prev !== status);
+    if (status === "done" && prev === "working") {
+      this.el.classList.remove("flash");
+      void this.el.offsetWidth; // restart the sweep
+      this.el.classList.add("flash");
+      clearTimeout(this.flashTimer);
+      this.flashTimer = setTimeout(() => this.el.classList.remove("flash"), 1200);
+    }
     this.$(".stext").textContent = shown;
     this.$(".stext").title = shown;
     this.composer.setBusy(status === "working" || status === "waiting");

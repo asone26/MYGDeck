@@ -5,7 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { ghostSuggestion, isDeckKey } from "./logic.js";
 
 // keep in sync with --panel / --fg in style.css
-const THEME = { background: "#111419", foreground: "#e3e6eb", cursor: "#6aa8ff", cursorAccent: "#111419", selectionBackground: "#2b3a55" };
+// background matches --screen in style.css so the terminal sits flush in the card
+const THEME = { background: "#0a0b10", foreground: "#e3e6eb", cursor: "#7ab4ff", cursorAccent: "#0a0b10", selectionBackground: "#2b3a55" };
 let seq = 0;
 
 /** Live sessions by PTY id, so backend events can find their terminal. */

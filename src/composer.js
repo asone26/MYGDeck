@@ -15,7 +15,7 @@ export class Composer {
       <select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <textarea rows="1" spellcheck="false"></textarea>
       <button class="send" title="보내기 (Enter)" aria-label="보내기" disabled>${icon(ICONS.ArrowUp)}</button><ul class="slash" hidden></ul></div>
-      <span class="route" hidden></span><button class="queue" hidden></button><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>${icon(ICONS.Square)}중지</button>`;
+      <span class="route" hidden></span><button class="queue" hidden></button><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>${icon(ICONS.Square)}<span class="lbl">중지</span></button>`;
     this.queueBtn = el.querySelector(".queue");
     this.queueBtn.onclick = () => card.clearQueue();
     this.renderQueue(); // rebuilt on agent switch: keep showing what is queued
