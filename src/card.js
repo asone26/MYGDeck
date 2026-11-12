@@ -44,6 +44,8 @@ export class Card {
     this.peek = [];
     this.view = "gui"; // preferred view; agents without hooks always show the raw CLI
     this.turnTools = [];
+    this.live = null; // the running turn read from the transcript: what the CLI shows, in order
+    this.openTools = new Set(); // tool runs the user unfolded in the GUI view (it is rebuilt often)
     this.history = []; // finished turns { ask, texts }, shown above the current one in the GUI view
     this.menuOpen = false;
     this.menuChoices = [];
@@ -123,6 +125,7 @@ export class Card {
     const status = ["working", "waiting", "done"].includes(s.status) ? s.status : "idle";
     this.setStatus(status, (status === "working" || status === "waiting") && s.text ? s.text : "다시 연결됨");
     if (status === "working") this.turnStart = null;
+    if (status === "working" || status === "waiting") this.peekTurn();
     if (this.transcript && (status === "done" || status === "idle")) {
       const turn = await invoke("read_turn", { path: this.transcript }).catch(() => null);
       if (turn) {
@@ -375,6 +378,8 @@ export class Card {
       this.turnTools = [];
       this.turnStart = Date.now();
       if (!notice) {
+        this.live = null;
+        this.openTools.clear();
         // The deck's own handoff/seed prompts are not the user's request.
         this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
         this.turn = null;
@@ -383,6 +388,7 @@ export class Card {
     if (event === "tool") {
       this.lastTool = data;
       this.turnTools.push(hookStatus("tool", data).text);
+      this.peekTurn();
     }
     if (event === "stop") {
       this.onFsChange();
@@ -396,6 +402,20 @@ export class Card {
    * Turn finished: read the agent's answer, the last request and context size from the transcript.
    * The stop hook can fire before the transcript is flushed, so read twice.
    */
+  /** Read the running turn so the GUI shows what the CLI shows (texts, tools, failures, to-dos). One read per burst of hooks. */
+  peekTurn() {
+    if (!this.transcript || this.peekTimer) return;
+    this.peekTimer = setTimeout(async () => {
+      this.peekTimer = null;
+      const seq = this.turnSeq;
+      const turn = await invoke("read_turn", { path: this.transcript }).catch(() => null);
+      if (!turn || seq !== this.turnSeq || !["working", "waiting"].includes(this.status)) return;
+      this.live = turn;
+      this.contextTokens = turn.context_tokens ?? this.contextTokens;
+      this.updateView();
+    }, 400);
+  }
+
   async finishTurn() {
     const turnAtStop = this.turnSeq;
     this.setStatus("done", "완료");

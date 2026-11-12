@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { keyLabel, permissionLine, replySuggestions } from "./logic.js";
+import { keyLabel, permissionLine, replySuggestions, timeline } from "./logic.js";
 import { statusIcon } from "./icons.js";
 
 const STATE = {
@@ -86,13 +86,19 @@ function renderCurrent(card, box, st) {
   // The user's own instruction stays on top while it runs and after it ends.
   if (card.turnAsk && st !== "exited") box.append(el("div", "s-ask", card.turnAsk));
 
-  if (st === "working") {
-    box.append(el("div", "s-line", card.statusText));
-    const steps = el("ul", "s-steps");
-    for (const t of card.turnTools.slice(-6)) steps.append(el("li", "", t));
-    box.append(steps);
-  } else if (st === "waiting") {
-    box.append(el("div", "s-line", card.statusText));
+  // While the agent runs: what the CLI shows, in its order (texts, tool runs with failures, the to-do list).
+  const running = st === "working" || st === "waiting";
+  if (running) {
+    const todo = todos(card.live?.todos);
+    if (todo) box.append(todo);
+    // Without a transcript (agents other than Claude Code) the hooks' tool list is all there is.
+    const flow = card.live
+      ? timeline(card.live, st === "working" ? card.turnTools.at(-1) : null)
+      : card.turnTools.length ? [{ kind: "tools", items: card.turnTools.map((text) => ({ text, error: null, full: null })) }] : [];
+    if (flow.length) box.append(flowEl(card, flow, true));
+    else box.append(el("div", "s-line", card.statusText));
+  }
+  if (st === "waiting") {
     const next = el("div", "s-next");
     next.append(el("span", "", `다음: ${permissionLine(card.lastTool?.tool, card.lastTool?.detail)}`));
     next.append(
@@ -100,8 +106,10 @@ function renderCurrent(card, box, st) {
       button("거부", () => card.answerPermission(false)),
     );
     box.append(next);
+  } else if (running) {
+    // shown above
   } else if (card.turn?.texts?.length && st !== "exited") {
-    const ans = answer(card.turn.texts);
+    const ans = flowEl(card, timeline(card.turn), false);
     // The view is rebuilt often (and the transcript is read twice): the answer rises in once per turn.
     if (st === "done" && card.revealedSeq !== card.turnSeq) {
       card.revealedSeq = card.turnSeq;
@@ -119,6 +127,44 @@ function renderCurrent(card, box, st) {
   } else if (card.statusText !== label) {
     box.append(el("div", "s-line", card.statusText));
   }
+}
+
+/** Texts as markdown; tool runs as compact lists. The live run stays open, finished ones fold (the user can unfold). */
+function flowEl(card, flow, live) {
+  const wrap = el("div", "s-flow");
+  flow.forEach((item, i) => {
+    if (item.kind === "text") return wrap.append(answer([item.text]));
+    const now = live && i === flow.length - 1;
+    const list = el("ul", now ? "s-steps now" : "s-steps");
+    for (const s of item.items) {
+      const li = el("li", s.error ? "fail" : "", s.text);
+      if (s.error) {
+        li.append(el("div", "s-err", s.error));
+        li.title = s.full;
+      }
+      list.append(li);
+    }
+    if (now) return wrap.append(list);
+    const fails = item.items.filter((s) => s.error).length;
+    const fold = el("details", fails ? "s-tools has-fail" : "s-tools");
+    fold.open = card.openTools.has(i);
+    fold.ontoggle = () => (fold.open ? card.openTools.add(i) : card.openTools.delete(i));
+    fold.append(el("summary", "", `도구 ${item.items.length}개${fails ? ` · 실패 ${fails}` : ""}  ·  ${item.items.at(-1).text}`), list);
+    wrap.append(fold);
+  });
+  return wrap;
+}
+
+/** The agent's to-do list as the CLI draws it: done, doing (its "-ing" form), to do. */
+function todos(list) {
+  if (!list?.length) return null;
+  const done = list.filter((t) => t.status === "completed").length;
+  const box = el("div", "s-todo");
+  box.append(el("div", "s-todo-head", `할 일 ${done}/${list.length}`));
+  const ul = el("ul");
+  for (const t of list) ul.append(el("li", t.status, t.status === "in_progress" ? t.active || t.content : t.content));
+  box.append(ul);
+  return box;
 }
 
 function answer(texts) {

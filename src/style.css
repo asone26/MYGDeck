@@ -73,11 +73,12 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
 /* live dots: a ring of the same light spreads out while the project works or waits */
 :is(.chip, .card, .tile)[data-status="working"] .dot::after,
 :is(.chip, .card, .tile)[data-status="waiting"] .dot::after {
-  content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ripple 1.8s var(--ease) infinite;
+  /* drawn at full ring size and scaled down: an 8px layer scaled up is rasterized small, snaps to the pixel grid and drifts off center */
+  content: ""; position: absolute; inset: -9px; border-radius: 50%; background: inherit; animation: ripple 1.8s var(--ease) infinite;
 }
 :is(.chip, .card, .tile)[data-status="waiting"] .dot { background: var(--warn); }
 :is(.chip, .card, .tile)[data-status="waiting"] .dot::after { animation-duration: 1.1s; }
-@keyframes ripple { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3.2); opacity: 0; } }
+@keyframes ripple { from { transform: scale(0.31); opacity: 0.7; } to { transform: scale(1); opacity: 0; } }
 
 /* status colors shared by strip chips, cards and tiles */
 :is(.badge, .cb) { display: inline-flex; }
@@ -352,8 +353,34 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .s-steps { margin: 0; padding: 0; list-style: none; color: var(--muted); font: 13px/1.8 var(--mono); }
 .s-steps li { position: relative; padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-steps li::before { content: ""; position: absolute; left: 2px; top: 0.85em; width: 5px; height: 5px; border-radius: 50%; background: var(--line-2); }
-.s-steps li:last-child { color: var(--fg); }
-.s-steps li:last-child::before { background: var(--pc); box-shadow: 0 0 8px var(--pc); }
+.s-steps.now li:last-child { color: var(--fg); }
+.s-steps.now li:last-child::before { background: var(--pc); box-shadow: 0 0 8px var(--pc); animation: breathe 1.6s var(--ease) infinite; }
+.s-steps li.fail { color: var(--fg); white-space: normal; }
+.s-steps li.fail::before { background: var(--bad); box-shadow: 0 0 6px color-mix(in srgb, var(--bad) 60%, transparent); }
+.s-err { color: var(--bad); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+/* the turn in CLI order: texts with tool runs between them */
+.s-flow { display: flex; flex-direction: column; gap: 10px; }
+.s-flow > .s-answer > :last-child { margin-bottom: 0; }
+.s-tools > summary {
+  cursor: pointer; list-style: none; color: var(--faint); font: 12px/1.8 var(--mono); width: fit-content; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--r-xs); padding: 0 6px; margin-left: -6px;
+}
+.s-tools > summary::-webkit-details-marker { display: none; }
+.s-tools > summary::before { content: "▸ "; }
+.s-tools[open] > summary::before { content: "▾ "; }
+.s-tools > summary:hover { color: var(--muted); background: var(--glass-hi); }
+.s-tools.has-fail > summary { color: color-mix(in srgb, var(--bad) 75%, var(--faint)); }
+.s-tools > .s-steps { margin-top: 4px; }
+/* the agent's to-do list, as the CLI draws it */
+.s-todo { padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--glass-hi); box-shadow: var(--edge); }
+.s-todo-head { color: var(--faint); font-size: 12px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.s-todo ul { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.75; }
+.s-todo li { position: relative; padding-left: 20px; color: var(--muted); }
+.s-todo li::before { content: "○"; position: absolute; left: 2px; color: var(--faint); }
+.s-todo li.completed { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--line-2); }
+.s-todo li.completed::before { content: "✓"; color: var(--ok); }
+.s-todo li.in_progress { color: var(--fg); font-weight: 600; }
+.s-todo li.in_progress::before { content: "●"; color: var(--pc); }
 .s-next {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; border-radius: var(--r-md);
   background: color-mix(in srgb, var(--pc) 8%, rgba(255, 255, 255, 0.03)); border: 1px solid color-mix(in srgb, var(--pc) 22%, var(--line));
@@ -372,6 +399,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 :is(.s-answer, .spec) a { color: var(--work); text-decoration: none; }
 :is(.s-answer, .spec) a:hover { text-decoration: underline; }
 /* a fresh answer rises in, block by block (summary.js adds .enter once per turn) */
+.s-flow.enter > * { animation: rise-in 0.6s var(--ease) backwards; }
 .s-answer.enter > * { animation: rise-in 0.6s var(--ease) backwards; }
 .s-answer.enter > :nth-child(2) { animation-delay: 60ms; }
 .s-answer.enter > :nth-child(3) { animation-delay: 120ms; }

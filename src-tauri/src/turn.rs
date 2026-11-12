@@ -13,6 +13,16 @@ pub struct ToolRun {
     pub name: String,
     pub detail: String,
     pub error: Option<String>,
+    /// How many texts came before it: tools and texts interleave in the order the CLI showed them.
+    pub at: usize,
+}
+
+/// One item of the agent's to-do list (Claude Code's TodoWrite), as the CLI shows it.
+#[derive(Serialize, Default, Debug, PartialEq)]
+pub struct Todo {
+    pub content: String,
+    pub status: String,
+    pub active: String,
 }
 
 #[derive(Serialize, Default, Debug)]
@@ -20,6 +30,8 @@ pub struct Turn {
     pub prompt: String,
     pub texts: Vec<String>,
     pub tools: Vec<ToolRun>,
+    /// The latest to-do list written in this turn (each TodoWrite replaces the whole list).
+    pub todos: Vec<Todo>,
     /// Tokens the model saw on its last call: input + cache read + cache creation.
     pub context_tokens: u64,
 }
@@ -69,6 +81,11 @@ fn is_notice(row: &Value, prompt: &str) -> bool {
         || ["<task-notification", "<agent-message", "<system-reminder", "[SYSTEM NOTIFICATION"].iter().any(|t| p.starts_with(t))
 }
 
+fn todos(list: &Value) -> Vec<Todo> {
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    list.as_array().into_iter().flatten().map(|t| Todo { content: s(t, "content"), status: s(t, "status"), active: s(t, "activeForm") }).collect()
+}
+
 pub fn parse_turn(jsonl: &str) -> Turn {
     let mut turn = Turn::default();
     for line in jsonl.lines() {
@@ -113,11 +130,15 @@ pub fn parse_turn(jsonl: &str) -> Turn {
                                 turn.texts.push(t);
                             }
                         }
+                        Some("tool_use") if item.get("name").and_then(Value::as_str) == Some("TodoWrite") => {
+                            turn.todos = todos(item.pointer("/input/todos").unwrap_or(&Value::Null));
+                        }
                         Some("tool_use") => turn.tools.push(ToolRun {
                             id: item.get("id").and_then(Value::as_str).unwrap_or("").into(),
                             name: item.get("name").and_then(Value::as_str).unwrap_or("").into(),
                             detail: tool_detail(item.get("input").unwrap_or(&Value::Null)),
                             error: None,
+                            at: turn.texts.len(),
                         }),
                         _ => {}
                     }
@@ -152,6 +173,7 @@ mod tests {
         assert_eq!(t.texts, vec!["Two tests fail."]);
         assert_eq!(t.tools.len(), 1);
         assert_eq!(t.tools[0].detail, "npm test");
+        assert_eq!(t.tools[0].at, 0);
         assert_eq!(t.tools[0].error.as_deref(), Some("Exit code 1\n2 tests failed"));
         assert_eq!(t.context_tokens, 40302);
     }
@@ -169,5 +191,20 @@ mod tests {
         let t = parse_turn(&lines);
         assert_eq!(t.prompt, "리뷰 돌려줘");
         assert_eq!(t.texts, vec!["맡겼습니다.", "BLOCKING 0건입니다."]);
+    }
+
+    #[test]
+    fn keeps_the_latest_todo_list_out_of_the_tools() {
+        let lines = [
+            r#"{"type":"user","message":{"content":"고쳐줘"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"TodoWrite","input":{"todos":[{"content":"원인 찾기","status":"in_progress","activeForm":"원인 찾는 중"}]}}]}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b","name":"TodoWrite","input":{"todos":[{"content":"원인 찾기","status":"completed","activeForm":"원인 찾는 중"},{"content":"테스트","status":"in_progress","activeForm":"테스트 실행 중"}]}}]}}"#,
+        ]
+        .join("
+");
+        let t = parse_turn(&lines);
+        assert!(t.tools.is_empty());
+        assert_eq!(t.todos.len(), 2);
+        assert_eq!(t.todos[1], Todo { content: "테스트".into(), status: "in_progress".into(), active: "테스트 실행 중".into() });
     }
 }

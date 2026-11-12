@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -194,4 +194,25 @@ test("ghost suggestion only on an empty input line", () => {
   assert.equal(ghostSuggestion([...cells("커밋"), ...cells("해", false)]), null);
   assert.equal(ghostSuggestion(cells('Try "fix lint errors"')), null);
   assert.equal(ghostSuggestion(cells("    ")), null);
+});
+
+test("timeline keeps the CLI order of texts and tools", () => {
+  const turn = {
+    texts: ["원인을 보겠습니다.", "고쳤습니다."],
+    tools: [
+      { name: "Bash", detail: "npm test", error: "Exit code 1\n2 tests failed", at: 1 },
+      { name: "Edit", detail: "src/a.js", error: null, at: 1 },
+    ],
+  };
+  assert.deepEqual(timeline(turn).map((x) => x.kind), ["text", "tools", "text"]);
+  assert.deepEqual(timeline(turn)[1].items.map((s) => [s.text, s.error]), [["Bash npm test", "2 tests failed"], ["Edit src/a.js", null]]);
+  // the hook's tool shows before the transcript has it, once
+  assert.equal(timeline(turn, "Read b.js").at(-1).items[0].text, "Read b.js");
+  assert.equal(timeline({ texts: [], tools: [{ name: "Read", detail: "b.js", at: 0 }] }, "Read b.js")[0].items.length, 1);
+  assert.deepEqual(timeline(null, "Bash ls"), [{ kind: "tools", items: [{ text: "Bash ls", error: null, full: null }] }]);
+});
+
+test("error line skips tags and the bare exit code", () => {
+  assert.equal(errorLine("<tool_use_error>File has not been read yet</tool_use_error>"), "File has not been read yet");
+  assert.equal(errorLine("Exit code 2"), "Exit code 2");
 });

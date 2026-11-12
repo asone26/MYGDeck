@@ -67,7 +67,7 @@ export function koMessage(msg) {
   return msg;
 }
 
-function toolText(d) {
+export function toolText(d) {
   const tool = d?.tool || "작업";
   if (!d?.detail) return tool;
   const s = String(d.detail);
@@ -365,4 +365,32 @@ export function ghostSuggestion(cells) {
   const text = cells.map((c) => c.ch).join("").trim();
   if (!text || cells.some((c) => c.ch.trim() && !c.faint) || /^Try "/.test(text)) return null;
   return text;
+}
+
+/** The line of a tool error worth reading: tags and a bare "Exit code N" are skipped (the CLI shows the output). */
+export function errorLine(err) {
+  const lines = String(err ?? "").replace(/<\/?[a-z_]+>/gi, "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const line = lines.find((l) => !/^exit code \d+$/i.test(l)) ?? lines[0] ?? "";
+  return line.length <= 160 ? line : line.slice(0, 159) + "…";
+}
+
+/**
+ * The turn as the CLI showed it, in order: the agent's texts with runs of tools between them (spec 3.2 ④-1).
+ * `pending` is the tool the hook just reported, which the transcript may not have yet.
+ */
+export function timeline(turn, pending) {
+  const out = [];
+  const texts = turn?.texts ?? [];
+  const tools = turn?.tools ?? [];
+  const step = (t) => ({ text: toolText({ tool: t.name, detail: t.detail }), error: t.error ? errorLine(t.error) : null, full: t.error ?? null });
+  const push = (s) => (out.at(-1)?.kind === "tools" ? out.at(-1).items.push(s) : out.push({ kind: "tools", items: [s] }));
+  let ti = 0;
+  texts.forEach((text, i) => {
+    for (; ti < tools.length && (tools[ti].at ?? 0) <= i; ti++) push(step(tools[ti]));
+    out.push({ kind: "text", text });
+  });
+  for (; ti < tools.length; ti++) push(step(tools[ti]));
+  const last = out.at(-1)?.kind === "tools" ? out.at(-1).items.at(-1).text : null;
+  if (pending && pending !== last) push({ text: pending, error: null, full: null });
+  return out;
 }
