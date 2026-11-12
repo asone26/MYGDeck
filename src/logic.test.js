@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -178,4 +178,20 @@ test("promptWaiting: menu patterns plus the adapter's regex", () => {
 test("menuQuestion stops at the first numbered option even when later labels repeat it", () => {
   const lines = [" Do you want to proceed?", " ❯ 1. Yes", "   2. Yes, and don't ask again", "   3. No"];
   assert.equal(menuQuestion(lines, menuChoices(lines)), "Do you want to proceed?");
+});
+
+test("harness notices are not user requests", () => {
+  assert.ok(isAgentNotice("<agent-message from=\"af3\">\n[Subagent hand-back] …"));
+  assert.ok(isAgentNotice("  <task-notification>\n<task-id>1</task-id>"));
+  assert.ok(isAgentNotice("[SYSTEM NOTIFICATION - NOT USER INPUT]"));
+  assert.ok(!isAgentNotice("agent-message 형식이 왜 이래?"));
+  assert.ok(!isAgentNotice(null));
+});
+
+test("ghost suggestion only on an empty input line", () => {
+  const cells = (s, faint = true) => [...s].map((ch) => ({ ch, faint }));
+  assert.equal(ghostSuggestion(cells("커밋해줘   ")), "커밋해줘");
+  assert.equal(ghostSuggestion([...cells("커밋"), ...cells("해", false)]), null);
+  assert.equal(ghostSuggestion(cells('Try "fix lint errors"')), null);
+  assert.equal(ghostSuggestion(cells("    ")), null);
 });

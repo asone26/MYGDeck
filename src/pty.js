@@ -2,7 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
-import { isDeckKey } from "./logic.js";
+import { ghostSuggestion, isDeckKey } from "./logic.js";
 
 // keep in sync with --panel / --fg in style.css
 const THEME = { background: "#111419", foreground: "#e3e6eb", cursor: "#6aa8ff", cursorAccent: "#111419", selectionBackground: "#2b3a55" };
@@ -161,6 +161,27 @@ export class Pty {
     return out;
   }
 
+  /** Grey text in the CLI's empty input line (Claude Code's prompt suggestion), or null. */
+  inputGhost() {
+    const b = this.term.buffer.active;
+    const cell = b.getNullCell();
+    // The input line is the lowest one starting with the prompt mark; only footer lines sit below it.
+    for (let y = b.baseY + this.term.rows - 1; y >= Math.max(b.baseY, b.baseY + this.term.rows - 15); y--) {
+      const line = b.getLine(y);
+      const m = /^\s*│?\s*[❯>]\s/.exec(line?.translateToString(true) ?? "");
+      if (!m) continue;
+      const cells = [];
+      // translateToString counts columns, so the match length is the first column after the mark.
+      for (let x = m[0].length; x < line.length; x++) {
+        line.getCell(x, cell);
+        if (!cell.getWidth()) continue; // right half of a wide character
+        cells.push({ ch: cell.getChars() || " ", faint: isFaint(cell) });
+      }
+      return ghostSuggestion(cells);
+    }
+    return null;
+  }
+
   kill() {
     if (this.alive) invoke("pty_kill", { id: this.id }).catch(() => {});
     this.alive = false;
@@ -171,4 +192,14 @@ export class Pty {
     this.kill();
     this.term.dispose();
   }
+}
+
+/** Dim or grey text (how CLIs draw suggestions); the cursor block drawn inside it counts too. */
+function isFaint(c) {
+  if (c.isDim() || c.isInverse()) return true;
+  const v = c.getFgColor();
+  if (c.isFgPalette()) return v === 8 || (v >= 240 && v <= 250);
+  if (!c.isFgRGB()) return false;
+  const [r, g, bl] = [v >> 16, (v >> 8) & 255, v & 255];
+  return Math.max(r, g, bl) - Math.min(r, g, bl) < 16 && r >= 80 && r <= 175;
 }

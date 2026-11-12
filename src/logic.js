@@ -34,7 +34,6 @@ export function projectColor(name, used = []) {
   return colors[h % colors.length];
 }
 
-export const BADGE = { starting: "[ ]", idle: "[-]", working: "[*]", waiting: "[!]", failed: "[x]", exited: "[off]" };
 
 const PERMISSION = /permission|approve|허용|승인/i;
 
@@ -314,7 +313,7 @@ export function routeInput(text) {
   return { route: "code", text };
 }
 
-export const ROUTE_CHIP = { cli: "⌨ cli", ask: "?? ask", code: "🛠 code", deep: "🧠 deep", search: "🔍 search" };
+export const ROUTE_CHIP = { cli: "cli", ask: "ask", code: "code", deep: "deep", search: "search" };
 /** Tab cycles the paths the deck can currently reach. */
 export const nextRoute = (route, reachable) => reachable[(reachable.indexOf(route) + 1) % reachable.length];
 
@@ -347,4 +346,22 @@ export function replySuggestions(texts) {
     { label: "네, 진행", text: "네, 진행해줘" },
     { label: "아니요", text: "아니요, 그건 하지 말아줘" },
   ];
+}
+
+// ---- Text the agent's harness injects as a "user" turn (subagent reports, task notices): not the user's request ----
+
+const NOTICE = /^\s*(?:<(?:task-notification|agent-message|system-reminder)[\s>]|\[SYSTEM NOTIFICATION)/;
+export const isAgentNotice = (prompt) => NOTICE.test(String(prompt ?? ""));
+
+// ---- CLI prompt suggestion: grey text in an otherwise empty input line ----
+
+/**
+ * cells: the input line after the prompt mark, as { ch, faint } (faint = dim or grey; the cursor block counts as faint).
+ * Returns the suggestion only when every visible cell is faint, i.e. the user typed nothing. The idle placeholder
+ * ('Try "…"') is a hint, not a suggestion.
+ */
+export function ghostSuggestion(cells) {
+  const text = cells.map((c) => c.ch).join("").trim();
+  if (!text || cells.some((c) => c.ch.trim() && !c.faint) || /^Try "/.test(text)) return null;
+  return text;
 }

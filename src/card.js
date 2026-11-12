@@ -7,20 +7,21 @@ import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, keyLabel, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
-import { renderSummary, summaryLines } from "./summary.js";
+import { ICONS, icon, statusIcon } from "./icons.js";
+import { MENU, keyLabel, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
+import { elapsed, renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 변경 파일 보기" hidden></button><span class="ctx" title="컨텍스트 사용량"></span>
-  <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
-  <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기</button>
-  <button class="b-shell" title="터미널 열기/닫기">터미널</button>
+  <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
+  <button class="b-cli" title="CLI 화면 보기" hidden></button>
+  <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
 </div>
 <div class="mods">
-  <details class="m-files"><summary>파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
-  <details class="m-spec"><summary>스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
+  <details class="m-files"><summary>${icon(ICONS.FolderTree)}파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
+  <details class="m-spec"><summary>${icon(ICONS.FileText)}스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
@@ -83,8 +84,11 @@ export class Card {
       onOutput: () => this.onOutput(),
       onExit: (code, err) => this.onExit(code, err),
     });
-    // Keep "N분째" fresh while the agent works.
-    this.clock = setInterval(() => this.status === "working" && this.updateView(), 20000);
+    // Keep the elapsed time ("1분 12초") ticking while the agent works, without rebuilding the view.
+    this.clock = setInterval(() => {
+      const t = this.status === "working" && this.turnStart && this.el.querySelector(".s-elapsed");
+      if (t) t.textContent = elapsed(this.turnStart);
+    }, 1000);
     this.setDensity("full");
     this.setStatus("starting", "시작 중");
   }
@@ -170,7 +174,7 @@ export class Card {
     this.el.dataset.status = status;
     // Idle/done need no header badge or text; the GUI view already says so.
     const shown = status === "idle" || status === "done" ? "" : text;
-    this.$(".badge").textContent = status === "idle" ? "" : BADGE[status] ?? "";
+    this.$(".badge").innerHTML = statusIcon(status);
     this.$(".stext").textContent = shown;
     this.$(".stext").title = shown;
     this.composer.setBusy(status === "working" || status === "waiting");
@@ -193,7 +197,7 @@ export class Card {
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
-    btn.textContent = this.view === "cli" ? "GUI 보기" : "CLI 보기";
+    btn.innerHTML = this.view === "cli" ? `${icon(ICONS.LayoutList)}<span class="lbl">GUI 보기</span>` : `${icon(ICONS.SquareTerminal)}<span class="lbl">CLI 보기</span>`;
     btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
     if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
     else if (show) renderSummary(this, box);
@@ -312,6 +316,8 @@ export class Card {
         const choices = menu ? menuChoices(lines) : [];
         const question = menuQuestion(lines, choices);
         this.prompting = !this.hooks && promptWaiting(lines, this.adapter?.waiting);
+        // The CLI's own next-prompt suggestion, mirrored as ghost text in the composer (→ accepts it).
+        this.composer.setGhost(this.hooks && !menu && (this.status === "done" || this.status === "idle") ? this.agent.inputGhost() : null);
         if (!this.hooks && this.status === "waiting" && !this.prompting) this.setStatus("working", "출력 중");
         if (menu !== this.menuOpen || question !== this.menuQuestion || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {
           this.menuOpen = menu;
@@ -351,13 +357,17 @@ export class Card {
     }
     if (data?.transcript) this.transcript = data.transcript;
     if (event === "prompt") {
-      if (this.turnAsk || this.turn?.texts?.length) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
+      // Subagent reports and task notices reach the agent as prompts: it keeps working on the same request.
+      const notice = isAgentNotice(data?.prompt);
+      if (!notice && (this.turnAsk || this.turn?.texts?.length)) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
       this.turnSeq = (this.turnSeq ?? 0) + 1;
       this.turnTools = [];
       this.turnStart = Date.now();
-      // The deck's own handoff/seed prompts are not the user's request.
-      this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
-      this.turn = null;
+      if (!notice) {
+        // The deck's own handoff/seed prompts are not the user's request.
+        this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
+        this.turn = null;
+      }
     }
     if (event === "tool") {
       this.lastTool = data;
@@ -491,13 +501,17 @@ export class Card {
     this.composer.renderQueue();
   }
 
-  /** Stop the agent's current work: the adapter's interrupt key (Esc for Claude Code). */
-  interrupt() {
+  /** Stop the agent's current work: the adapter's interrupt key (Esc for Claude Code).
+   *  restore: put the stopped prompt back in the input box so it can be edited and sent again. */
+  interrupt(restore = true) {
     if (!this.agent.alive) return;
     this.agent.write(this.adapter?.interrupt || "\x03");
     this.rotating = null;
     this.clearQueue(); // stopping means "not this plan any more"
-    if (this.status === "working" || this.status === "waiting") this.setStatus("idle", "중지함");
+    if (this.status === "working" || this.status === "waiting") {
+      this.setStatus("idle", "중지함");
+      if (restore) this.composer.restore();
+    }
   }
 
   onExit(code, err) {
@@ -555,7 +569,7 @@ export class Card {
   showAnswer(question, text, via, found = {}) {
     const qa = this.$(".qa");
     qa.hidden = false;
-    qa.innerHTML = `<div class="qa-h"><b></b><span class="muted"></span><span class="sp"></span><button class="fw">에이전트에게 전달</button><button class="x">×</button></div><div class="qa-b md"></div>`;
+    qa.innerHTML = `<div class="qa-h"><b></b><span class="muted"></span><span class="sp"></span><button class="fw">에이전트에게 전달</button><button class="x" aria-label="닫기">${icon(ICONS.X)}</button></div><div class="qa-b md"></div>`;
     qa.querySelector("b").textContent = question.length > 60 ? question.slice(0, 60) + "…" : question;
     const n = found.sources?.length ?? 0;
     qa.querySelector(".muted").textContent = via ? `${via} · ${found.searched ? `웹 검색 ${n}건 기반` : "실시간 검색 없이 답함"}` : "";

@@ -61,6 +61,14 @@ fn tool_detail(input: &Value) -> String {
         .collect()
 }
 
+/// Text the harness injects as a user row (newer Claude Code marks the origin; older ones only the wrapper tag).
+fn is_notice(row: &Value, prompt: &str) -> bool {
+    let origin = row.pointer("/origin/kind").and_then(Value::as_str);
+    let p = prompt.trim_start();
+    origin.is_some_and(|k| k != "human")
+        || ["<task-notification", "<agent-message", "<system-reminder", "[SYSTEM NOTIFICATION"].iter().any(|t| p.starts_with(t))
+}
+
 pub fn parse_turn(jsonl: &str) -> Turn {
     let mut turn = Turn::default();
     for line in jsonl.lines() {
@@ -78,7 +86,8 @@ pub fn parse_turn(jsonl: &str) -> Turn {
                     .unwrap_or_default();
                 if results.is_empty() {
                     let prompt = content_text(content);
-                    if !prompt.trim().is_empty() {
+                    // Task notices and subagent reports arrive as user rows: the agent keeps answering the same request.
+                    if !prompt.trim().is_empty() && !is_notice(&row, &prompt) {
                         turn = Turn { prompt, context_tokens: turn.context_tokens, ..Default::default() };
                     }
                 }
@@ -145,5 +154,20 @@ mod tests {
         assert_eq!(t.tools[0].detail, "npm test");
         assert_eq!(t.tools[0].error.as_deref(), Some("Exit code 1\n2 tests failed"));
         assert_eq!(t.context_tokens, 40302);
+    }
+
+    #[test]
+    fn notices_do_not_start_a_turn() {
+        let lines = [
+            r#"{"type":"user","origin":{"kind":"human"},"message":{"content":"리뷰 돌려줘"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"맡겼습니다."}]}}"#,
+            r#"{"type":"user","origin":{"kind":"task-notification"},"message":{"content":"<task-notification>\n<status>completed</status>"}}"#,
+            r#"{"type":"user","message":{"content":"<agent-message from=\"a1\">report</agent-message>"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"BLOCKING 0건입니다."}]}}"#,
+        ]
+        .join("\n");
+        let t = parse_turn(&lines);
+        assert_eq!(t.prompt, "리뷰 돌려줘");
+        assert_eq!(t.texts, vec!["맡겼습니다.", "BLOCKING 0건입니다."]);
     }
 }

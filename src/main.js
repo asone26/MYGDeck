@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 import "highlight.js/styles/github-dark.css";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -9,7 +10,8 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { Card } from "./card.js";
 import { openConnections, refreshPool } from "./connections.js";
 import { ptys } from "./pty.js";
-import { BADGE, DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
+import { ICONS, icon, statusIcon } from "./icons.js";
+import { DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
 const deck = $("deck");
@@ -39,7 +41,20 @@ let overviewSel = 0;
 async function boot() {
   const addBtn = document.getElementById("add-btn");
   addBtn.title = keyLabel(addBtn.title);
-  document.querySelectorAll(".keys").forEach((k) => (k.textContent = keyLabel(k.textContent)));
+  addBtn.innerHTML = icon(ICONS.Plus);
+  $("conn-btn").innerHTML = icon(ICONS.KeyRound);
+  // "Ctrl+P 파일 · ..." → key caps + labels
+  document.querySelectorAll(".keys").forEach((k) => {
+    const items = k.textContent.split(" · ").map((it) => {
+      const [key, ...label] = keyLabel(it).split(" ");
+      const span = document.createElement("span");
+      const kbd = document.createElement("kbd");
+      kbd.textContent = key;
+      span.append(kbd, " " + label.join(" "));
+      return span;
+    });
+    k.replaceChildren(...items);
+  });
   await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data, !!e.payload.replay));
   await listen("pty-exit", (e) => ptys.get(e.payload.id)?.exited(e.payload.code));
   await listen("daemon-lost", () => [...ptys.values()].forEach((p) => p.exited(null)));
@@ -223,9 +238,9 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel("닫기 (Ctrl+F4)")}">×</span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel("닫기 (Ctrl+F4)")}">${icon(ICONS.X)}</span>`;
     b.querySelector(".cn").textContent = c.name;
-    b.onclick = (e) => (e.target.classList.contains("cx") ? closeCard(c) : setActive(i));
+    b.onclick = (e) => (e.target.closest(".cx") ? closeCard(c) : setActive(i));
     chips.append(b);
   });
 }
@@ -256,7 +271,7 @@ function renderOverview() {
     t.style.setProperty("--pc", c.color);
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
     t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
-    t.querySelector(".cb").textContent = BADGE[c.status] ?? "";
+    t.querySelector(".cb").innerHTML = statusIcon(c.status);
     t.querySelector(".tt").textContent = c.statusText;
     t.querySelector(".tp").textContent = c.peek.join("\n");
     t.onclick = () => {

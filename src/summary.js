@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { keyLabel, permissionLine, replySuggestions } from "./logic.js";
+import { statusIcon } from "./icons.js";
 
 const STATE = {
   idle: ["💬", "준비됨"],
@@ -26,9 +27,11 @@ function button(label, onClick, cls = "") {
   return b;
 }
 
-function minutes(since) {
-  const m = Math.floor((Date.now() - since) / 60000);
-  return m < 1 ? "방금 시작" : `${m}분째`;
+export function elapsed(since) {
+  const sec = Math.floor((Date.now() - since) / 1000);
+  if (sec < 60) return "방금";
+  const [m, s] = [Math.floor(sec / 60), sec % 60];
+  return s ? `${m}분 ${s}초` : `${m}분`;
 }
 
 /**
@@ -53,10 +56,16 @@ export function renderSummary(card, box) {
 }
 
 function renderCurrent(card, box, st) {
-  const [icon, label] = STATE[st] ?? ["", ""];
+  const [, label] = STATE[st] ?? ["", ""];
   const head = el("div", "s-head");
-  if (st === "done") head.append(el("span", "s-state", `${icon} ${label}`)); // only "done" is worth a headline
-  if (st === "working" && card.turnStart) head.append(el("span", "s-time", minutes(card.turnStart)));
+  if (st === "done") {
+    // only "done" is worth a headline
+    const h = el("span", "s-state");
+    h.innerHTML = statusIcon("done");
+    h.append(label);
+    head.append(h);
+  }
+  if (st === "working" && card.turnStart) head.append(el("span", "s-time s-elapsed", elapsed(card.turnStart)));
   if (card.rotating) head.append(el("span", "s-time", "· 새 세션으로 이어가는 중"));
   box.append(head);
   // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
