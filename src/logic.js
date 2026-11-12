@@ -349,6 +349,12 @@ export function replySuggestions(texts) {
   ];
 }
 
+/** The answer recommends a fresh conversation: it names `/clear`, or a new session/conversation with a recommendation. */
+export function suggestsClear(texts) {
+  const t = String(texts?.at(-1) ?? "");
+  return /(^|[^\w/])\/clear\b/i.test(t) || /새\s*(세션|대화)[^\n]{0,24}(권|추천|시작하|여는|열어)/.test(t);
+}
+
 // ---- Text the agent's harness injects as a "user" turn (subagent reports, task notices): not the user's request ----
 
 const NOTICE = /^\s*(?:<(?:task-notification|agent-message|system-reminder)[\s>]|\[SYSTEM NOTIFICATION)/;

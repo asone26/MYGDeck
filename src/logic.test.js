@@ -216,3 +216,12 @@ test("error line skips tags and the bare exit code", () => {
   assert.equal(errorLine("<tool_use_error>File has not been read yet</tool_use_error>"), "File has not been read yet");
   assert.equal(errorLine("Exit code 2"), "Exit code 2");
 });
+
+test("suggestsClear spots a recommendation to start over", async () => {
+  const { suggestsClear } = await import("./logic.js");
+  assert.equal(suggestsClear(["주제가 바뀌었으니 `/clear` 후 새 세션에서 진행하시는 걸 권합니다."]), true);
+  assert.equal(suggestsClear(["다음 작업은 새 대화에서 시작하는 게 좋겠습니다."]), true);
+  assert.equal(suggestsClear(["src/clear.js와 a/clear 경로를 고쳤습니다."]), false);
+  assert.equal(suggestsClear(["테스트를 고쳤습니다."]), false);
+  assert.equal(suggestsClear([]), false);
+});

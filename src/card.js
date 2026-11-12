@@ -481,10 +481,19 @@ export class Card {
   }
 
   /** A new session in the same card: old scrollback stays above a seam line, then the agent is seeded from project files. */
-  async renew() {
+  /** The answer recommends a fresh conversation (/clear): start one carrying nothing over, unlike rotate(). */
+  async freshSession() {
+    if (this.rotating || !["done", "idle"].includes(this.status)) return;
+    if (this.turnAsk || this.turn?.texts?.length) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
+    this.turn = this.live = this.turnAsk = null;
+    await this.renew(false);
+    if (this.status !== "starting") this.setStatus("idle", "새 대화");
+  }
+
+  async renew(seed = true) {
     const next = this.nextAdapter ?? this.adapter;
     this.nextAdapter = null;
-    this.rotating = "seed";
+    this.rotating = seed ? "seed" : null;
     this.transcript = this.contextTokens = null;
     const t = this.agent.term;
     // Seam below everything, then scroll the whole old screen into scrollback: on Windows the CLI's clear arrives
@@ -504,7 +513,7 @@ export class Card {
       this.onReady = null;
     }
     setTimeout(() => (this.agent.keepScrollback = false), 5000);
-    if (!next || !this.agent.alive) return (this.rotating = null);
+    if (!seed || !next || !this.agent.alive) return (this.rotating = null);
     this.sendToAgent(await this.seed(this.lastAsk));
   }
 

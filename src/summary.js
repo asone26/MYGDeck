@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { keyLabel, permissionLine, replySuggestions, timeline } from "./logic.js";
+import { keyLabel, permissionLine, replySuggestions, suggestsClear, timeline } from "./logic.js";
 import { statusIcon } from "./icons.js";
 
 const STATE = {
@@ -119,9 +119,12 @@ function renderCurrent(card, box, st) {
     box.append(ans);
     // The answer asks the user something: one click answers it (A2).
     const replies = st === "done" && !card.menuOpen ? replySuggestions(card.turn.texts) : [];
-    if (replies.length) {
+    // The answer recommends starting over (/clear): one click does it.
+    const fresh = st === "done" && !card.menuOpen && suggestsClear(card.turn.texts);
+    if (replies.length || fresh) {
       const row = el("div", "s-next s-replies");
       for (const r of replies) row.append(button(r.label, () => card.sendToAgent(r.text)));
+      if (fresh) row.append(button(`새 대화 (${card.adapter?.clear_cmd || "다시 시작"})`, () => card.freshSession(), "fresh"));
       box.append(row);
     }
   } else if (card.statusText !== label) {
