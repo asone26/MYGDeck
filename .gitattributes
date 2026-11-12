@@ -1,0 +1,2 @@
+# macOS launcher: a CRLF shebang does not run.
+*.command text eol=lf
