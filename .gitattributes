@@ -1,2 +1,5 @@
 # macOS launcher: a CRLF shebang does not run.
 *.command text eol=lf
+bin/mygdeck text eol=lf
+bin/*.sh text eol=lf
+*.cmd text eol=crlf

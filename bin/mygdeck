@@ -1,0 +1,26 @@
+#!/bin/bash
+# 어디서든 mygdeck 실행 (macOS. bin/install.sh가 이 폴더를 PATH에 넣는다).
+#   mygdeck                → 지난번 프로젝트 목록으로 열기
+#   mygdeck . ../other     → 지정한 폴더들로 열기 (상대 경로 가능)
+#   mygdeck rebuild        → 다시 빌드하고 열기 (mygdeck.command)
+#   mygdeck status|send|daemon|mobile|help ...  → mygdeck-cli
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP="$ROOT/src-tauri/target/debug/bundle/macos/mygdeck.app"
+
+case "${1:-}" in
+  status|send|daemon|mobile|help|-h|--help)
+    CLI="$ROOT/src-tauri/target/debug/mygdeck-cli"
+    [ -x "$CLI" ] || { echo "mygdeck-cli가 아직 빌드되지 않았습니다. 먼저 mygdeck rebuild 를 실행하세요."; exit 1; }
+    exec "$CLI" "$@" ;;
+  rebuild) shift; exec "$ROOT/mygdeck.command" "$@" ;;
+esac
+
+# 앱 번들이 없으면 처음 한 번 빌드부터 (mygdeck.command가 상대 경로도 절대 경로로 바꾼다).
+[ -d "$APP" ] || exec "$ROOT/mygdeck.command" "$@"
+
+args=()
+for a in "$@"; do
+  if [ -d "$a" ]; then args+=("$(cd "$a" && pwd)"); else args+=("$a"); fi
+done
+open -n "$APP" --args ${args[@]+"${args[@]}"}

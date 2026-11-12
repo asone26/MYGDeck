@@ -6,6 +6,9 @@
 ## 실행
 
 **`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열린다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보인다). 처음 한 번은 자동으로 빌드한다(몇 분). `mygdeck.vbs`는 이미 빌드된 앱을 그대로 열므로, 코드를 고친 뒤에는 `mygdeck.bat`으로 연다(실행할 때마다 바뀐 부분만 다시 빌드, 몇 초). 다시 빌드할 때 열려 있던 창은 닫히지만 에이전트 세션은 데몬에서 계속 돈다.
+**어디서든 실행**: `bin\install.cmd`(macOS는 `bin/install.sh`)를 한 번 실행하면 `bin` 폴더가 PATH에 들어가고, 새 터미널 어디서든 `mygdeck`으로 연다. `mygdeck .`은 지금 폴더를 열고(상대 경로 가능), `mygdeck rebuild`는 다시 빌드한 뒤 열며, `mygdeck status|send|daemon|mobile`은 `mygdeck-cli`로 넘어간다.
+바탕화면 아이콘(Windows)은 `wscript.exe "<저장소>\mygdeck.vbs"`를 대상으로 하는 바로가기다(아이콘은 `src-tauri\icons\icon.ico`).
+
 프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Ctrl+'`)로 폴더를 골라 추가한다.
 
 **macOS**: `mygdeck.command`를 더블클릭한다(`mygdeck.bat`과 같은 일을 한다. 폴더를 넘기려면 터미널에서 `./mygdeck.command ~/work/a`). 처음 한 번은 Xcode 명령줄 도구(`xcode-select --install`), Rust, Node가 있어야 한다. Finder에서 연 앱도 로그인 셸(`$SHELL`)의 PATH를 읽어 오므로 Homebrew·npm으로 설치한 `claude`·`codex`·`git`을 찾는다. 빌드한 앱은 `src-tauri/target/debug/bundle/macos/mygdeck.app`에 생기고, Dock에 고정해 두고 열어도 된다.
