@@ -6,6 +6,7 @@ pub mod crash;
 pub mod daemon;
 pub mod fsx;
 pub mod hooks;
+pub mod mobile;
 pub mod pty;
 pub mod turn;
 pub mod watch;
@@ -63,6 +64,8 @@ pub fn run() {
             let hook_exe = daemon::stable_exe().to_string_lossy().replace('\\', "/");
             let claude_settings = hooks::write_claude_settings(app.handle(), &hook_exe)?;
             app.manage(hooks::HookInfo { claude_settings, hook_exe });
+            // How this window was started, so the phone dashboard can open the deck the same way.
+            mobile::remember_app();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

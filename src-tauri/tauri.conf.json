@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "mygdeck",
+        "title": "MYG Deck",
         "width": 1440,
         "height": 900,
         "dragDropEnabled": false

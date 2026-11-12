@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#0a0c10" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="MYG Deck" />
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+  <link rel="icon" href="/icon.png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <title>MYG Deck</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="/xterm.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <!-- Daily password (Cloudflare Pages relay) -->
+  <section id="login-view" class="view login" hidden>
+    <form id="login-form" class="login-box" autocomplete="on">
+      <h1 class="brand">MYG Deck</h1>
+      <p class="login-sub">PC의 에이전트를 보려면 비밀번호를 입력하세요. 하루 동안 다시 묻지 않습니다.</p>
+      <input type="text" name="username" value="mygdeck" autocomplete="username" hidden />
+      <label for="password" class="login-label">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required />
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+      <button id="login-btn" class="primary" type="submit">열기</button>
+    </form>
+  </section>
+
+  <!-- Project list -->
+  <section id="list-view" class="view">
+    <header class="bar">
+      <h1 class="brand">MYG Deck</h1>
+      <p id="summary" class="summary"></p>
+    </header>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <ul id="projects" class="projects"></ul>
+    <div id="empty" class="empty" hidden>
+      <p class="empty-title">실행 중인 에이전트가 없습니다</p>
+      <p>PC에서 MYG Deck을 열고 프로젝트를 시작하면 여기에 나타납니다.</p>
+    </div>
+  </section>
+
+  <!-- One project -->
+  <section id="detail-view" class="view" hidden>
+    <header class="bar detail-bar">
+      <button id="back" class="icon-btn" aria-label="프로젝트 목록">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="d-title">
+        <h1 id="d-name"></h1>
+        <p id="d-status" class="d-status"></p>
+      </div>
+    </header>
+
+    <div id="ask" class="ask" hidden>
+      <p class="ask-label">응답이 필요합니다</p>
+      <p id="ask-head" class="ask-head"></p>
+      <p id="ask-q" class="ask-q"></p>
+      <div id="ask-choices" class="ask-choices"></div>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button id="tab-turn" role="tab" aria-selected="true">답변</button>
+      <button id="tab-cli" role="tab" aria-selected="false">CLI 화면</button>
+    </nav>
+
+    <main id="d-body" class="d-body">
+      <div id="turn" class="turn"></div>
+      <pre id="cli" class="cli" hidden></pre>
+    </main>
+
+    <footer class="composer">
+      <p id="hint" class="composer-hint" hidden>위 선택지에 먼저 답하세요</p>
+      <textarea id="input" rows="1" placeholder="에이전트에게 지시" enterkeyhint="enter" autocomplete="off"></textarea>
+      <div class="composer-actions">
+        <button id="stop" class="ghost" type="button">중지</button>
+        <button id="send" class="primary" type="button">보내기</button>
+      </div>
+    </footer>
+  </section>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+</body>
+</html>

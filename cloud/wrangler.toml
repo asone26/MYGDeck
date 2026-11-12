@@ -1,0 +1,21 @@
+# Phone dashboard relay: a Worker at https://mygdeck.<account>.workers.dev (docs/mobile.md).
+# Secrets (not here): DASH_PASSWORD, SESSION_SECRET, DASH_TOKEN via `wrangler secret put`.
+name = "mygdeck"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/auth/*"]
+
+# Failed-login counts.
+[[kv_namespaces]]
+binding = "DECK"
+id = "c303b16ec6aa4055ad7f0b8648443737"
+
+# Workers VPC: the named tunnel "mygdeck" that the PC's session daemon runs → 127.0.0.1:7781.
+[[vpc_services]]
+binding = "PC"
+service_id = "01a1ce28-7637-79b0-875d-12ad0f576074"

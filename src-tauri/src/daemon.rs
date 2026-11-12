@@ -63,10 +63,16 @@ struct Session {
     cwd: String,
     command: String,
     started: u64,
+    /// Terminal size the window last set, so a phone can lay out the same screen.
+    cols: u16,
+    rows: u16,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     buf: String,
+    /// Bytes of output ever produced; `buf` holds the last `buf.len()` of them. A poller asks for
+    /// output after an offset it saw before.
+    total: u64,
     /// The CLI turned on bracketed paste, so multi-line text can be sent as one input.
     bracketed: bool,
     last_output: Instant,
@@ -85,6 +91,8 @@ pub struct Hub {
     clients: Mutex<Vec<(u64, Sender<String>)>>,
     next_client: Mutex<u64>,
     stop: AtomicBool,
+    /// The phone dashboard's listener, when `mygdeck-cli mobile on` enabled it.
+    pub(crate) mobile: Mutex<Option<crate::mobile::Running>>,
 }
 
 /// Keep the tail of the output, cut at a line start so replay does not begin mid-sequence.
@@ -144,7 +152,13 @@ impl Hub {
     }
 
     fn busy(&self) -> bool {
-        !self.sessions.lock().unwrap().is_empty() || !self.clients.lock().unwrap().is_empty()
+        // With the phone dashboard on, the daemon stays up: it holds the tunnel the phone comes in by.
+        !self.sessions.lock().unwrap().is_empty() || !self.clients.lock().unwrap().is_empty() || self.mobile.lock().unwrap().is_some()
+    }
+
+    /// A deck window is attached (only windows hold the event stream).
+    pub(crate) fn window_open(&self) -> bool {
+        !self.clients.lock().unwrap().is_empty()
     }
 
     fn spawn(self: &Arc<Self>, id: &str, cwd: &str, argv: &[String], cols: u16, rows: u16) -> Result<(), String> {
@@ -184,10 +198,13 @@ impl Hub {
                 cwd: cwd.to_string(),
                 command: argv.join(" "),
                 started: now_secs(),
+                cols: size.cols,
+                rows: size.rows,
                 master: pair.master,
                 writer,
                 killer,
                 buf: String::new(),
+                total: 0,
                 bracketed: false,
                 last_output: Instant::now(),
                 hooked: false,
@@ -227,6 +244,7 @@ impl Hub {
         let mut map = self.sessions.lock().unwrap();
         let Some(x) = map.get_mut(id) else { return };
         x.buf.push_str(&s);
+        x.total += s.len() as u64;
         trim_buf(&mut x.buf, KEEP);
         if let Some(b) = bracketed_switch(&s) {
             x.bracketed = b;
@@ -261,7 +279,7 @@ impl Hub {
         self.broadcast(json!({ "ev": "hook", "id": ev.id, "event": ev.event, "data": ev.data }));
     }
 
-    fn list(&self) -> Value {
+    pub(crate) fn list(&self) -> Value {
         let map = self.sessions.lock().unwrap();
         let mut out: Vec<Value> = map
             .iter()
@@ -277,6 +295,7 @@ impl Hub {
                     "id": id, "cwd": x.cwd, "command": x.command, "started": x.started,
                     "status": status, "text": x.text, "tool": x.tool, "transcript": x.transcript,
                     "idle_secs": x.last_output.elapsed().as_secs(),
+                    "hooked": x.hooked, "cols": x.cols, "rows": x.rows,
                 })
             })
             .collect();
@@ -289,11 +308,50 @@ impl Hub {
         f(map.get_mut(id).ok_or("session closed")?)
     }
 
-    fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
+    pub(crate) fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
         self.with(id, |x| {
             x.writer.write_all(data).map_err(|e| e.to_string())?;
             x.writer.flush().map_err(|e| e.to_string())
         })
+    }
+
+    /// Transcript file the agent's hooks reported, if any.
+    pub(crate) fn transcript(&self, id: &str) -> Option<String> {
+        self.sessions.lock().unwrap().get(id)?.transcript.as_str().map(String::from)
+    }
+
+    /// Output after byte offset `from`, for pollers that cannot hold a stream open. When `from` is
+    /// older than the kept buffer (or 0), the whole buffer comes back with `reset: true`.
+    pub(crate) fn output_since(&self, id: &str, from: u64) -> Result<Value, String> {
+        self.with(id, |x| {
+            let start = x.total - x.buf.len() as u64;
+            let (data, reset) = if from < start || from > x.total || from == 0 {
+                (x.buf.as_str(), true)
+            } else {
+                let at = (from - start) as usize;
+                // Offsets come from earlier replies, which end on whole chunks; guard anyway.
+                (x.buf.get(at..).unwrap_or(x.buf.as_str()), !x.buf.is_char_boundary(at))
+            };
+            Ok(json!({ "data": data, "next": x.total, "reset": reset }))
+        })
+    }
+
+    /// Paste `text` into a session, then press Enter. Refused while a hooked agent shows a
+    /// permission menu: the text would pick one of its options.
+    pub(crate) fn send_to(self: &Arc<Self>, id: &str, text: &str) -> Result<(), String> {
+        let bracketed = self.with(id, |x| {
+            if x.hooked && x.status == "waiting" {
+                return Err("에이전트가 승인을 기다립니다. 먼저 선택지에 답하세요".to_string());
+            }
+            Ok(x.bracketed)
+        })?;
+        self.write(id, paste_bytes(text, bracketed).as_bytes())?;
+        let (hub, eid) = (self.clone(), id.to_string());
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(80));
+            let _ = hub.write(&eid, b"\r");
+        });
+        Ok(())
     }
 
     /// Type text into an agent CLI as a paste, then press Enter (for `mygdeck-cli send`).
@@ -303,23 +361,11 @@ impl Hub {
             let hits: Vec<(&String, &Session)> = map.iter().filter(|(id, x)| id.contains("#agent|") && matches_target(&x.cwd, target)).collect();
             match hits.as_slice() {
                 [] => return Err(format!("'{target}' 프로젝트에서 실행 중인 에이전트가 없습니다")),
-                [(id, x)] => {
-                    // Typing into an open permission menu would pick one of its options.
-                    if x.hooked && x.status == "waiting" {
-                        return Err(format!("'{target}' 에이전트가 승인을 기다립니다. 창에서 먼저 답하세요"));
-                    }
-                    (*id).clone()
-                }
+                [(id, _)] => (*id).clone(),
                 _ => return Err(format!("'{target}'에 해당하는 프로젝트가 여럿입니다. 전체 경로로 지정하세요")),
             }
         };
-        let bracketed = self.with(&id, |x| Ok(x.bracketed))?;
-        self.write(&id, paste_bytes(text, bracketed).as_bytes())?;
-        let (hub, eid) = (self.clone(), id.clone());
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(80));
-            let _ = hub.write(&eid, b"\r");
-        });
+        self.send_to(&id, text).map_err(|e| format!("'{target}': {e}"))?;
         Ok(json!({ "id": id }))
     }
 
@@ -335,6 +381,7 @@ impl Hub {
             "write" => self.write(&id, s("data").as_bytes()).map(|_| Value::Null),
             "resize" => self.with(&id, |x| {
                 let size = PtySize { rows: n("rows").max(2), cols: n("cols").max(10), pixel_width: 0, pixel_height: 0 };
+                (x.cols, x.rows) = (size.cols, size.rows);
                 x.master.resize(size).map_err(|e| e.to_string()).map(|_| Value::Null)
             }),
             "kill" => {
@@ -350,6 +397,8 @@ impl Hub {
                 Ok(Value::Null)
             }),
             "send" => self.send_text(&s("target"), &s("text")),
+            // `mygdeck-cli mobile on|off` applies the setting to a running daemon.
+            "mobile" => crate::mobile::apply(self),
             "shutdown" => {
                 for x in self.sessions.lock().unwrap().values_mut() {
                     let _ = x.killer.kill();
@@ -428,6 +477,7 @@ pub fn start(listener: TcpListener, token: String) -> Arc<Hub> {
         clients: Mutex::default(),
         next_client: Mutex::default(),
         stop: AtomicBool::new(false),
+        mobile: Mutex::default(),
     });
     let h = hub.clone();
     thread::spawn(move || {
@@ -452,6 +502,7 @@ pub fn serve() {
         return;
     }
     let hub = start(listener, info.token.clone());
+    let _ = crate::mobile::apply(&hub);
     let mut quiet_since = Instant::now();
     loop {
         thread::sleep(Duration::from_secs(1));
@@ -465,6 +516,7 @@ pub fn serve() {
             break;
         }
     }
+    crate::mobile::shutdown(&hub);
     if read_info().is_some_and(|i| i.pid == info.pid) {
         let _ = std::fs::remove_file(info_path());
     }
@@ -705,3 +757,4 @@ mod tests {
         assert_eq!(cli.call(json!({ "op": "list" })).unwrap(), json!([]));
     }
 }
+

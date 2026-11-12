@@ -89,7 +89,7 @@ async function onStatus(card, prev) {
   notifyAllowed ??= (await isPermissionGranted().catch(() => false)) || (await requestPermission().catch(() => "denied")) === "granted";
   if (!notifyAllowed) return;
   const what = card.status === "waiting" ? card.statusText || "입력을 기다립니다" : `완료${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`;
-  sendNotification({ title: `mygdeck · ${card.name}`, body: what });
+  sendNotification({ title: `MYG Deck · ${card.name}`, body: what });
 }
 
 window.addEventListener("focus", () => {

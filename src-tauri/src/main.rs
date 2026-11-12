@@ -8,6 +8,10 @@ fn main() {
         // The same binary doubles as the agent hook command (see hooks.rs) and the session daemon.
         Some("--hook") => mygdeck_lib::hooks::send(args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str)),
         Some("--daemon") => mygdeck_lib::daemon::serve(),
+        // Login item for the phone dashboard: start the daemon (and its tunnel) without a window.
+        Some("--start-daemon") => {
+            let _ = mygdeck_lib::daemon::ensure_running();
+        }
         _ => mygdeck_lib::run(),
     }
 }

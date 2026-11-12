@@ -1,11 +1,11 @@
-# mygdeck
+# MYG Deck
 
 여러 프로젝트의 코딩 에이전트 CLI(Claude Code, Codex, Gemini CLI…)를 한 창에서 나란히 굴리는 바이브 코딩용 IDE.
 창을 닫아도 에이전트는 계속 돌고, 다시 열면 하던 화면 그대로 이어 붙는다. 기획 문서는 [master.md](master.md).
 
 ## 실행
 
-**`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열린다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보인다). 처음 한 번은 자동으로 빌드한다(몇 분). 코드를 고친 뒤에는 `mygdeck.bat rebuild`.
+**`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열린다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보인다). 처음 한 번은 자동으로 빌드한다(몇 분). `mygdeck.vbs`는 이미 빌드된 앱을 그대로 열므로, 코드를 고친 뒤에는 `mygdeck.bat`으로 연다(실행할 때마다 바뀐 부분만 다시 빌드, 몇 초). 다시 빌드할 때 열려 있던 창은 닫히지만 에이전트 세션은 데몬에서 계속 돈다.
 프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Ctrl+'`)로 폴더를 골라 추가한다.
 
 **macOS**: `mygdeck.command`를 더블클릭한다(`mygdeck.bat`과 같은 일을 한다. 폴더를 넘기려면 터미널에서 `./mygdeck.command ~/work/a`). 처음 한 번은 Xcode 명령줄 도구(`xcode-select --install`), Rust, Node가 있어야 한다. Finder에서 연 앱도 로그인 셸(`$SHELL`)의 PATH를 읽어 오므로 Homebrew·npm으로 설치한 `claude`·`codex`·`git`을 찾는다. 빌드한 앱은 `src-tauri/target/debug/bundle/macos/mygdeck.app`에 생기고, Dock에 고정해 두고 열어도 된다.
@@ -82,6 +82,7 @@ mygdeck-cli daemon stop       # 데몬과 모든 세션 종료
 - **worktree로 하나 더 열기**: 에이전트 선택 메뉴의 `⑂` 항목. 옆 폴더 `<저장소>-wtN`에 새 브랜치 `mygdeck/wtN`을 만들어 카드로 연다. 마지막 커밋(HEAD)에서 만들므로 커밋하지 않은 변경은 새 카드에 없다. 같은 프로젝트에서 두 번째 에이전트가 첫 번째의 파일을 건드리지 않고 일한다. worktree 카드의 에이전트 메뉴에는 `⇢ 원래 폴더에 합치기`(커밋된 작업을 원래 폴더의 현재 브랜치로 병합, 충돌이 나면 합치지 않음)와 `✕ 이 worktree 버리기`(카드를 닫고 폴더 삭제, 커밋하지 않은 변경이 있으면 지우지 않음, 합치지 않은 브랜치는 남김)가 있다.
 - **다음 할 일**: 에이전트가 작업 중일 때 입력창에 보낸 지시는 바로 들어가지 않고 줄을 선다(`다음 N`). 턴이 끝날 때마다 하나씩 보낸다. `다음 N`을 누르거나 `Ctrl+Q`로 중지하면 줄이 비워진다. 턴 종료를 정확히 아는 에이전트(hooks, Codex `notify`)에서만 동작하고, 그 밖의 에이전트는 예전처럼 바로 보낸다. `??` 질문은 에이전트를 거치지 않으므로 바로 답한다.
 - **원격 서버**: [docs/remote.md](docs/remote.md)
+- **휴대폰 대시보드**: `https://mygdeck.asone26g.workers.dev`에서 하루 한 번 비밀번호로 연다. 프로젝트 상태 보기, 승인 선택지 답하기, 지시 보내기, 중지. PC는 데몬이 띄우는 Cloudflare 이름 있는 터널(공개 주소 없음)로 연결된다. [docs/mobile.md](docs/mobile.md)
 
 ## 에이전트 어댑터
 

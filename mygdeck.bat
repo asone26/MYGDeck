@@ -23,7 +23,8 @@ exit /b 0
 
 :build
 rem 실행 중인 앱이 실행 파일을 잡고 있으면 덮어쓸 수 없다. 이 폴더의 mygdeck.exe만 종료한다.
-powershell -NoProfile -Command "$p = Get-Process mygdeck -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:EXE }; if ($p) { Write-Host '실행 중인 mygdeck을 종료합니다...'; $p | Stop-Process -Force; $p | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue }"
+rem 자식 WebView2 프로세스까지 함께 끝낸다(/T). 남아 있으면 새 창이 "리소스 사용 중"으로 바로 꺼진다.
+powershell -NoProfile -Command "$p = Get-Process mygdeck -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:EXE }; if ($p) { Write-Host '실행 중인 mygdeck을 종료합니다...'; $p | ForEach-Object { taskkill /PID $_.Id /T /F | Out-Null }; $p | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue }"
 pushd "%ROOT%"
 if not exist node_modules (call npm install || (popd & exit /b 1))
 rem --debug: 웹 화면은 실행 파일 안에 들어가므로 개발 서버 없이 열린다.

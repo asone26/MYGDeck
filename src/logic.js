@@ -245,7 +245,9 @@ export function menuChoices(lines) {
 export function menuQuestion(lines, choices) {
   if (!choices.length) return "";
   const yn = choices[0].keys[0] === "y";
-  const end = yn ? lines.length : lines.findLastIndex((l) => l.includes(choices[0].label));
+  // A numbered menu starts at its "1." line; matching the label alone also hits "2. Yes, and…".
+  const first = /^\d$/.test(choices[0].keys[0]) ? lines.findLastIndex((l) => /^\s*(?:[❯>›]\s*)?1\.\s/.test(l)) : -1;
+  const end = yn ? lines.length : first >= 0 ? first : lines.findLastIndex((l) => l.includes(choices[0].label));
   if (end < 0) return "";
   const paras = [[]];
   for (const raw of lines.slice(Math.max(0, end - 10), end)) {

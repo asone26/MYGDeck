@@ -23,6 +23,7 @@ toml = "0.9"
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
 ureq = { version = "3", features = ["json"] }
 tauri-plugin-notification = "2"
+getrandom = "0.2"
 
 [profile.release]
 opt-level = "s"

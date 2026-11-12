@@ -174,3 +174,8 @@ test("promptWaiting: menu patterns plus the adapter's regex", () => {
   assert.ok(!promptWaiting(["Writing file src/a.js", "done"], "Waiting for user confirmation"));
   assert.ok(!promptWaiting(["anything"], "(")); // invalid regex is ignored
 });
+
+test("menuQuestion stops at the first numbered option even when later labels repeat it", () => {
+  const lines = [" Do you want to proceed?", " ❯ 1. Yes", "   2. Yes, and don't ask again", "   3. No"];
+  assert.equal(menuQuestion(lines, menuChoices(lines)), "Do you want to proceed?");
+});
