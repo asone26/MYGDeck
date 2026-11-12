@@ -76,6 +76,20 @@ function toolText(d) {
   return `${tool} ${shown}`;
 }
 
+/**
+ * Agents without hooks: does the screen end on an approval prompt? The deck's menu patterns plus the
+ * adapter's own `waiting` regex (an invalid one is ignored).
+ */
+export function promptWaiting(lines, extra) {
+  const tail = lines.filter(Boolean).slice(-8).join("\n");
+  if (MENU.test(tail)) return true;
+  try {
+    return !!extra && new RegExp(extra, "i").test(tail);
+  } catch {
+    return false;
+  }
+}
+
 /** Next other card needing the user: waiting, then failed, then done (spec 3.0 ⑧). -1 if none. */
 export function nextAttention(statuses, active) {
   const n = statuses.length;

@@ -257,6 +257,7 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .composer select { height: var(--row); box-sizing: border-box; background: var(--raised); color: var(--muted); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px 6px; font: 13px var(--sans); cursor: pointer; }
 .composer select:hover { color: var(--fg); }
 .composer .stop { height: var(--row); box-sizing: border-box; }
+.composer .queue { height: var(--row); box-sizing: border-box; white-space: nowrap; }
 .composer .agent { align-self: flex-end; }
 .slash {
   position: absolute; bottom: 100%; left: 0; right: 0; margin: 0 0 6px; padding: 4px; list-style: none;

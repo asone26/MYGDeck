@@ -1,0 +1,11 @@
+name = "antigravity"
+# Google Antigravity CLI, the successor of Gemini CLI (May 2026). Install on Windows:
+#   irm https://antigravity.google/cli/install.ps1 | iex   (then `agy install` puts it on PATH)
+# Flags checked against `agy --help` 1.5.6; the slash commands come from public docs.
+launch = "agy"
+resume_args = "--continue"
+mention = "@{path}"
+effort_cmd = "/effort {effort}"
+efforts = ["low", "medium", "high", "xhigh", "max"]
+status = "idle"
+commands = ["/resume", "/rewind", "/effort", "/usage", "/agents", "/config"]

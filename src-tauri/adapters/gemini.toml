@@ -5,3 +5,5 @@ mention = "@{path}"
 clear_cmd = "/clear"
 status = "idle"
 commands = ["/help", "/clear", "/compress", "/model", "/memory", "/stats", "/tools", "/mcp", "/chat", "/quit"]
+# Approval prompt text (no hooks): the card shows "waiting" when the output stops on it. Unverified.
+waiting = "Waiting for user confirmation|Allow execution"

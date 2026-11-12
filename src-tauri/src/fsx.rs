@@ -248,6 +248,42 @@ pub fn git_worktree_add(root: String) -> Result<String, String> {
     Err("worktree 이름을 정하지 못했습니다".into())
 }
 
+/// A deck worktree's branch (`mygdeck/wtN`) and the main working folder it came from.
+fn worktree_origin(root: &str) -> Result<(String, String), String> {
+    let branch = run_git(root, &["rev-parse", "--abbrev-ref", "HEAD"]).map_err(|_| "git 저장소가 아닙니다".to_string())?;
+    let branch = branch.trim().to_string();
+    if !branch.starts_with("mygdeck/wt") {
+        return Err("덱이 만든 worktree가 아닙니다".into());
+    }
+    let list = run_git(root, &["worktree", "list", "--porcelain"])?;
+    let main = list.lines().next().and_then(|l| l.strip_prefix("worktree ")).ok_or("원래 폴더를 찾지 못했습니다")?;
+    Ok((branch, main.to_string()))
+}
+
+/// "원래 폴더에 합치기": merge the worktree's saved commits into the main folder's current branch.
+/// Uncommitted work and conflicts are refused, never half-merged.
+#[tauri::command]
+pub fn git_worktree_merge(root: String) -> Result<(), String> {
+    let (branch, main) = worktree_origin(&root)?;
+    if !run_git(&root, &["status", "--porcelain"])?.trim().is_empty() {
+        return Err("저장점(커밋)으로 만들지 않은 변경이 있습니다. 에이전트에게 커밋을 먼저 부탁하세요.".into());
+    }
+    if let Err(e) = run_git(&main, &["merge", "--no-edit", &branch]) {
+        let _ = git(&main, &["merge", "--abort"]);
+        return Err(format!("원래 폴더의 변경과 겹쳐서 합치지 않았습니다.\n\n{e}"));
+    }
+    Ok(())
+}
+
+/// "worktree 버리기": remove the folder; the branch goes too unless it holds unmerged commits.
+/// Returns whether the branch was deleted. Uncommitted changes are refused.
+#[tauri::command]
+pub fn git_worktree_remove(root: String) -> Result<bool, String> {
+    let (branch, main) = worktree_origin(&root)?;
+    run_git(&main, &["worktree", "remove", &root]).map_err(|e| format!("worktree를 지우지 못했습니다(커밋하지 않은 변경이 있으면 지우지 않습니다).\n\n{e}"))?;
+    Ok(git(&main, &["branch", "-d", &branch]).is_some())
+}
+
 #[derive(Serialize)]
 pub struct Spec {
     name: String,
@@ -371,6 +407,18 @@ mod tests {
         assert_eq!(std::fs::read_to_string(format!("{wt}/a.txt")).unwrap().trim_end(), "v1"); // from HEAD, not the dirty copy
         assert!(git_worktree_add(root.clone()).unwrap().ends_with("proj-wt3"));
         assert!(git_worktree_add(base.to_string_lossy().into_owned()).is_err());
+
+        // Merge refuses uncommitted work, then brings saved commits home; remove drops the merged branch.
+        let w = |args: &[&str]| run_git(&wt, args).unwrap();
+        std::fs::write(format!("{wt}/b.txt"), "new\n").unwrap();
+        assert!(git_worktree_merge(wt.clone()).is_err());
+        w(&["add", "-A"]);
+        w(&["commit", "-qm", "b"]);
+        git_worktree_merge(wt.clone()).unwrap();
+        assert!(dir.join("b.txt").exists());
+        assert!(git_worktree_merge(root.clone()).is_err()); // the main folder is not a deck worktree
+        assert!(git_worktree_remove(wt.clone()).unwrap());
+        assert!(!std::path::Path::new(&wt).exists());
         let _ = std::fs::remove_dir_all(&base);
     }
 

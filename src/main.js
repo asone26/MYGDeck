@@ -76,6 +76,7 @@ let jumpTo = null; // card to show when the user comes back to the window
 
 async function onStatus(card, prev) {
   if (!["waiting", "done"].includes(card.status) || card.rotating || prev === "starting") return;
+  if (card.status === "done" && card.queue.length) return; // the next queued input goes on by itself
   if (document.hasFocus()) return; // the header strip already shows it
   if (Date.now() - (card.notifiedAt ?? 0) < NOTIFY_GAP) return;
   card.notifiedAt = Date.now();

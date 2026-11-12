@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { message } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { Pty } from "./pty.js";
 import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
-import { BADGE, MENU, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, seedPrompt } from "./logic.js";
+import { BADGE, MENU, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -45,6 +45,7 @@ export class Card {
     this.history = []; // finished turns { ask, texts }, shown above the current one in the GUI view
     this.menuOpen = false;
     this.menuChoices = [];
+    this.queue = []; // inputs typed while the agent works, sent one per finished turn
     this.el = document.createElement("section");
     this.el.className = "card";
     this.el.style.setProperty("--pc", this.color);
@@ -143,6 +144,8 @@ export class Card {
     pick.append(new Option(this.adapter?.name ?? (this.cfg.command ? "custom" : "shell"), ""));
     if (this.adapter) pick.append(new Option("↻ 새 세션으로 이어가기", "@renew"), ...others.map((a) => new Option(`→ ${a.name}(으)로 바꾸기`, a.name)));
     if (this.adapter) pick.append(new Option("⑂ worktree로 하나 더 열기", "@worktree"));
+    // Cards opened by "⑂": bring the work home or throw the copy away (git checks it really is one).
+    if (/-wt\d+$/.test(this.root)) pick.append(new Option("⇢ 원래 폴더에 합치기", "@wt-merge"), new Option("✕ 이 worktree 버리기", "@wt-remove"));
     pick.disabled = !this.adapter;
   }
 
@@ -150,6 +153,8 @@ export class Card {
     this.pick.value = "";
     if (!value) return;
     if (value === "@worktree") return this.openWorktree();
+    if (value === "@wt-merge") return this.mergeWorktree();
+    if (value === "@wt-remove") return this.removeWorktree();
     const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
     this.rotate(next, next === this.adapter ? "사용자가 새 세션을 요청했습니다." : `에이전트를 ${next.name}(으)로 바꿉니다.`);
   }
@@ -261,10 +266,42 @@ export class Card {
     }
   }
 
+  /** Merge this worktree's commits into the main folder's branch. Conflicts are refused, not left half-done. */
+  async mergeWorktree() {
+    try {
+      await invoke("git_worktree_merge", { root: this.root });
+      message("원래 폴더에 합쳤습니다. 이 worktree는 이제 버려도 됩니다.", { kind: "info" });
+    } catch (e) {
+      message(`합치지 못했습니다: ${e}`, { kind: "error" });
+    }
+  }
+
+  /** Close the card (its agent holds the folder open), then remove the worktree. */
+  async removeWorktree() {
+    const ok = await ask(`${this.name}: 카드를 닫고 이 worktree 폴더를 지웁니다. 커밋하지 않은 변경이 있으면 지우지 않습니다.`, { title: "worktree 버리기", kind: "warning", okLabel: "버리기", cancelLabel: "취소" });
+    if (!ok) return;
+    await this.app.closeCard(this);
+    if (this.app.cards.includes(this)) return; // the user kept a busy card open
+    let err;
+    // Windows keeps the folder locked until the agent process has fully exited.
+    for (let i = 0; i < 6; i++) {
+      try {
+        const branchGone = await invoke("git_worktree_remove", { root: this.root });
+        if (!branchGone) message("폴더는 지웠습니다. 합치지 않은 저장점이 있어 브랜치는 남겨 두었습니다.", { kind: "info" });
+        return;
+      } catch (e) {
+        err = e;
+        await sleep(500);
+      }
+    }
+    message(`${err}`, { kind: "error" });
+  }
+
   onOutput() {
     // The CLI redraws right after reporting a turn end; that is not new work.
     const settling = this.status === "done" && Date.now() - (this.doneAt ?? 0) < 2000;
-    if (!this.hooks && this.status !== "working" && !settling) this.setStatus("working", "출력 중");
+    // A redrawn approval prompt is still waiting; the peek check below decides when it is gone.
+    if (!this.hooks && this.status !== "working" && this.status !== "waiting" && !settling) this.setStatus("working", "출력 중");
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => this.onSilence(), this.hooks ? 1500 : 3000);
     if (!this.peekTimer) {
@@ -274,6 +311,8 @@ export class Card {
         const menu = MENU.test(lines.filter(Boolean).slice(-8).join("\n"));
         const choices = menu ? menuChoices(lines) : [];
         const question = menuQuestion(lines, choices);
+        this.prompting = !this.hooks && promptWaiting(lines, this.adapter?.waiting);
+        if (!this.hooks && this.status === "waiting" && !this.prompting) this.setStatus("working", "출력 중");
         if (menu !== this.menuOpen || question !== this.menuQuestion || JSON.stringify(choices) !== JSON.stringify(this.menuChoices)) {
           this.menuOpen = menu;
           this.menuChoices = choices;
@@ -290,6 +329,8 @@ export class Card {
     if (this.hooks) {
       if (this.status === "starting") this.setStatus("idle", "준비됨");
     } else if (this.status === "working" || this.status === "starting") {
+      // Output stopped on an approval prompt: the agent waits for the user, the turn is not over.
+      if (this.prompting) return this.setStatus("waiting", this.menuQuestion?.split("\n")[0] || "승인 대기");
       // With exact turn ends, silence only means "maybe waiting" (e.g. an approval prompt).
       const turnEnded = this.status === "working" && !this.exactStop;
       this.setStatus("idle", "입력 대기 추정");
@@ -355,8 +396,8 @@ export class Card {
    * handoff (agent writes progress.md) → its turn ends → renew (clear or relaunch, then seed) → seed turn ends.
    */
   afterTurn() {
-    if (this.pendingNote) {
-      const note = this.pendingNote;
+    const note = this.pendingNote;
+    if (note) {
       this.pendingNote = null;
       this.sendToAgent(note);
     }
@@ -368,10 +409,26 @@ export class Card {
     if (this.rotating === "handoff") return this.renew();
     if (this.rotating === "seed") {
       this.rotating = null;
-      return this.updateView();
+      this.updateView();
+    } else {
+      const limit = this.adapter?.context_limit;
+      if (limit && this.contextTokens >= limit * ROTATE_AT) this.rotate(this.adapter, `컨텍스트가 ${Math.round((this.contextTokens / limit) * 100)}% 찼습니다.`);
     }
-    const limit = this.adapter?.context_limit;
-    if (limit && this.contextTokens >= limit * ROTATE_AT) this.rotate(this.adapter, `컨텍스트가 ${Math.round((this.contextTokens / limit) * 100)}% 찼습니다.`);
+    // A forwarded note takes this turn; the queue goes on when that one ends.
+    if (!note && !this.rotating) this.sendQueued();
+  }
+
+  /** Queueing needs an exact turn end; a silence guess could fire mid-work. */
+  get canQueue() {
+    return this.hooks || !!this.exactStop;
+  }
+
+  sendQueued() {
+    const next = this.queue.shift();
+    if (!next) return;
+    this.composer.renderQueue();
+    // Let the CLI take a model switch-back typed just before.
+    setTimeout(() => this.composer.dispatchQueued(next), 600);
   }
 
   rotate(next, why) {
@@ -429,11 +486,17 @@ export class Card {
     this.renderAgentPick();
   }
 
+  clearQueue() {
+    this.queue.length = 0;
+    this.composer.renderQueue();
+  }
+
   /** Stop the agent's current work: the adapter's interrupt key (Esc for Claude Code). */
   interrupt() {
     if (!this.agent.alive) return;
     this.agent.write(this.adapter?.interrupt || "\x03");
     this.rotating = null;
+    this.clearQueue(); // stopping means "not this plan any more"
     if (this.status === "working" || this.status === "waiting") this.setStatus("idle", "중지함");
   }
 
@@ -448,6 +511,7 @@ export class Card {
     }
     this.resuming = false;
     this.rotating = null;
+    this.clearQueue();
     this.setStatus("exited", err ? "실행 실패" : "종료됨");
     this.$(".b-restart").hidden = false;
   }

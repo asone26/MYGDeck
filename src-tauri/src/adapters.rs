@@ -39,6 +39,10 @@ pub struct Adapter {
     /// "hooks" when the agent reports its state through hooks, otherwise "idle" (output-silence guess).
     #[serde(default = "default_status")]
     pub status: String,
+    /// Agents without hooks: regex for the screen text of an approval prompt, on top of the deck's
+    /// built-in menu patterns. When the output stops on a match, the card shows "waiting".
+    #[serde(default)]
+    pub waiting: String,
     #[serde(default)]
     pub detected: bool,
 }
@@ -53,10 +57,11 @@ fn default_status() -> String {
     "idle".into()
 }
 
-const BUILTIN: [&str; 3] = [
+const BUILTIN: [&str; 4] = [
     include_str!("../adapters/claude-code.toml"),
     include_str!("../adapters/codex.toml"),
     include_str!("../adapters/gemini.toml"),
+    include_str!("../adapters/antigravity.toml"),
 ];
 
 #[tauri::command]

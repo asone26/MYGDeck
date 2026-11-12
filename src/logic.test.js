@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -152,4 +152,11 @@ test("replySuggestions offers listed options or yes/no only after a question", a
   ]);
   const letters = replySuggestions(["A) 지금 배포\nB) 내일 배포\nWhich one?"]);
   assert.deepEqual(letters.map((r) => r.text), ["A안으로 진행해줘", "B안으로 진행해줘"]);
+});
+
+test("promptWaiting: menu patterns plus the adapter's regex", () => {
+  assert.ok(promptWaiting(["Run tests?", "› 1. Yes, proceed", "  2. No", "Press enter to confirm or esc to cancel"], ""));
+  assert.ok(promptWaiting(["⠏ Waiting for user confirmation..."], "Waiting for user confirmation"));
+  assert.ok(!promptWaiting(["Writing file src/a.js", "done"], "Waiting for user confirmation"));
+  assert.ok(!promptWaiting(["anything"], "(")); // invalid regex is ignored
 });

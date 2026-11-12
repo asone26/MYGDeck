@@ -55,6 +55,8 @@ pub fn run() {
             fsx::git_ahead,
             fsx::git_shortstat,
             fsx::git_worktree_add,
+            fsx::git_worktree_merge,
+            fsx::git_worktree_remove,
             fsx::save_paste,
             fsx::open_file,
             fsx::rename_file,

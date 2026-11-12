@@ -11,7 +11,10 @@ export class Composer {
     const a = card.adapter;
     el.innerHTML = `<select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <span class="route" hidden></span><div class="cbox"><div class="thumbs"></div><textarea rows="1" spellcheck="false"></textarea><ul class="slash" hidden></ul></div>
-      <button class="stop" title="작업 중지 (Ctrl+Q)" hidden>■ 중지</button>`;
+      <button class="queue" hidden></button><button class="stop" title="작업 중지 (Ctrl+Q)" hidden>■ 중지</button>`;
+    this.queueBtn = el.querySelector(".queue");
+    this.queueBtn.onclick = () => card.clearQueue();
+    this.renderQueue(); // rebuilt on agent switch: keep showing what is queued
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
     this.ta = el.querySelector("textarea");
@@ -173,10 +176,31 @@ export class Composer {
     // Search and ?? go to the free pool when one is set up (4.5); without it they go to the agent.
     const pooled = ["ask", "search"].includes(r.route);
     const route = r.route === "cli" ? "cli" : pooled && poolReady() ? "ask" : this.reachable().includes(r.route) ? r.route : "code";
-    this.last = { text: r.route === "ask" ? text : r.text, route, shown: r.route };
-    this.dispatch(route, this.last.text);
+    const item = { text: r.route === "ask" ? text : r.text, route, shown: r.route };
+    const busy = this.card.status === "working" || this.card.status === "waiting";
+    // Mid-turn input would land in the running turn (or pick a menu option): hold it for the next turn.
+    // Pool questions never touch the agent, so they go now.
+    if (busy && route !== "ask" && this.card.canQueue) {
+      this.card.queue.push(item);
+      this.renderQueue();
+    } else {
+      this.last = item;
+      this.dispatch(route, item.text);
+    }
     this.ta.value = "";
     this.update();
+  }
+
+  dispatchQueued(item) {
+    this.last = item;
+    this.dispatch(item.route, item.text);
+  }
+
+  renderQueue() {
+    const q = this.card.queue;
+    this.queueBtn.hidden = !q.length;
+    this.queueBtn.textContent = `다음 ${q.length}`;
+    this.queueBtn.title = `작업이 끝나면 차례로 보냅니다:\n${q.map((x, i) => `${i + 1}. ${x.text.slice(0, 80)}`).join("\n")}\n\n클릭: 모두 취소`;
   }
 
   dispatch(route, text) {
@@ -220,5 +244,6 @@ export class Composer {
 
   setBusy(busy) {
     this.stopBtn.hidden = !busy;
+    this.ta.placeholder = busy && this.card.canQueue ? "작업이 끝나면 보낼 다음 지시" : "무엇을 할까요?";
   }
 }
