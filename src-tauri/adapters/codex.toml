@@ -1,5 +1,11 @@
 name = "codex"
 launch = "codex"
+# Codex runs its `notify` program at each turn end with a JSON argument: the deck learns
+# "done" exactly instead of guessing from output silence.
+# TOML literal strings (single quotes) keep double quotes out of the argument: npm installs
+# codex as a .cmd shim, and cmd.exe mangles them.
+hook_args = "-c \"notify=['{hook_exe}','--hook','stop']\""
+resume_args = "resume --last"
 mention = "@{path}"
 clear_cmd = "/new"
 status = "idle"

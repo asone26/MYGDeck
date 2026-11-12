@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { permissionLine } from "./logic.js";
+import { permissionLine, replySuggestions } from "./logic.js";
 
 const STATE = {
   idle: ["💬", "준비됨"],
@@ -93,6 +93,13 @@ function renderCurrent(card, box, st) {
     box.append(next);
   } else if (card.turn?.texts?.length && st !== "exited") {
     box.append(answer(card.turn.texts));
+    // The answer asks the user something: one click answers it (A2).
+    const replies = st === "done" && !card.menuOpen ? replySuggestions(card.turn.texts) : [];
+    if (replies.length) {
+      const row = el("div", "s-next s-replies");
+      for (const r of replies) row.append(button(r.label, () => card.sendToAgent(r.text)));
+      box.append(row);
+    }
   } else if (card.statusText !== label) {
     box.append(el("div", "s-line", card.statusText));
   }

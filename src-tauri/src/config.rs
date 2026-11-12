@@ -13,6 +13,9 @@ pub struct Project {
     /// Custom launch command, for agents without an adapter (e.g. `ssh host claude`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// false: start a new conversation on launch instead of reopening the last one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

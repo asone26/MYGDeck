@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { message } from "@tauri-apps/plugin-dialog";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { Pty } from "./pty.js";
@@ -12,7 +13,7 @@ import { renderSummary, summaryLines } from "./summary.js";
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><span class="ctx" title="컨텍스트 사용량"></span>
+  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 변경 파일 보기" hidden></button><span class="ctx" title="컨텍스트 사용량"></span>
   <button class="b-restart" title="다시 시작" hidden>↻ 다시 시작</button>
   <button class="b-cli" title="CLI 화면 보기" hidden>CLI 보기</button>
   <button class="b-shell" title="터미널 열기/닫기">터미널</button>
@@ -63,6 +64,7 @@ export class Card {
       grip.onpointerup = () => { grip.onpointermove = grip.onpointerup = null; };
     };
     this.$(".b-cli").onclick = () => this.toggleView();
+    this.$(".diff").onclick = () => this.showChanges();
     this.el.addEventListener("mousedown", () => app.setActive(app.cards.indexOf(this), false));
     const spec = this.$(".m-spec");
     spec.addEventListener("toggle", () => spec.open && this.loadSpec());
@@ -74,6 +76,7 @@ export class Card {
     this.composer = new Composer(this, this.$(".composer"));
     this.renderAgentPick();
     this.agent = new Pty(this.$(".term"), {
+      key: `${this.root}#agent`,
       cwd: this.root,
       command: this.launchCommand(),
       onOutput: () => this.onOutput(),
@@ -85,16 +88,44 @@ export class Card {
     this.setStatus("starting", "시작 중");
   }
 
-  launchCommand() {
+  launchCommand(resume = false) {
     if (this.cfg.command) return this.cfg.command;
     if (!this.adapter) return this.app.shell;
-    return [this.adapter.launch, this.adapter.hook_args].filter(Boolean).join(" ");
+    return [this.adapter.launch, this.adapter.hook_args, resume && this.adapter.resume_args].filter(Boolean).join(" ");
   }
 
-  start() {
-    this.agent.start();
+  /**
+   * Take over the agent still running in the session daemon; otherwise launch it. `resume` (deck
+   * restored after the daemon was gone, e.g. a reboot) reopens the project's last conversation.
+   */
+  async start({ resume = false } = {}) {
     invoke("watch_project", { id: this.id, root: this.root }).catch(() => {});
     this.explorer.refresh();
+    const live = this.app.takeLive(this.agent.key);
+    if (live && (await this.agent.attach(live.id))) return this.reattached(live);
+    this.resuming = resume && !!this.adapter?.resume_args && this.cfg.resume !== false;
+    this.agent.command = this.launchCommand(this.resuming);
+    this.startedAt = Date.now();
+    await this.agent.start();
+    this.agent.command = this.launchCommand(); // later restarts (rotation, crash) start fresh
+  }
+
+  /** The daemon kept the agent running while the window was away: pick up its last known state. */
+  async reattached(s) {
+    if (s.transcript) this.transcript = s.transcript;
+    if (s.tool?.tool) this.lastTool = s.tool;
+    const status = ["working", "waiting", "done"].includes(s.status) ? s.status : "idle";
+    this.setStatus(status, (status === "working" || status === "waiting") && s.text ? s.text : "다시 연결됨");
+    if (status === "working") this.turnStart = null;
+    if (this.transcript && (status === "done" || status === "idle")) {
+      const turn = await invoke("read_turn", { path: this.transcript }).catch(() => null);
+      if (turn) {
+        this.turn = turn;
+        this.contextTokens = turn.context_tokens ?? null;
+        if (turn.prompt && !turn.prompt.includes("[mygdeck]")) this.lastAsk = this.turnAsk = turn.prompt.replace(/\s+/g, " ").trim();
+        this.updateView();
+      }
+    }
   }
 
   /** Crash recovery reuses the rotation path, so the new CLI is seeded with the project's context (spec 5.2). */
@@ -111,12 +142,14 @@ export class Card {
     pick.textContent = "";
     pick.append(new Option(this.adapter?.name ?? (this.cfg.command ? "custom" : "shell"), ""));
     if (this.adapter) pick.append(new Option("↻ 새 세션으로 이어가기", "@renew"), ...others.map((a) => new Option(`→ ${a.name}(으)로 바꾸기`, a.name)));
+    if (this.adapter) pick.append(new Option("⑂ worktree로 하나 더 열기", "@worktree"));
     pick.disabled = !this.adapter;
   }
 
   onAgentPick(value) {
     this.pick.value = "";
     if (!value) return;
+    if (value === "@worktree") return this.openWorktree();
     const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
     this.rotate(next, next === this.adapter ? "사용자가 새 세션을 요청했습니다." : `에이전트를 ${next.name}(으)로 바꿉니다.`);
   }
@@ -126,6 +159,7 @@ export class Card {
   }
 
   setStatus(status, text) {
+    const prev = this.status;
     Object.assign(this, { status, statusText: text });
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
@@ -137,6 +171,7 @@ export class Card {
     this.composer.setBusy(status === "working" || status === "waiting");
     this.updateView();
     this.app.renderStrip();
+    if (prev !== status) this.app.onStatus?.(this, prev);
   }
 
   /** In GUI mode the GUI view covers the CLI; only agents without hooks show the raw CLI. */
@@ -147,6 +182,7 @@ export class Card {
     const show = this.view === "gui" && this.hooks;
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
+    this.agent?.setCovered(show);
     const limit = this.adapter?.context_limit;
     this.$(".ctx").textContent = limit && this.contextTokens ? `${Math.round((this.contextTokens / limit) * 100)}%` : "";
     // One header button toggles both ways; only hook agents have a GUI view.
@@ -185,10 +221,50 @@ export class Card {
 
   setFileCount(n) {
     this.$(".cnt").textContent = n ? `· ${n}개 변경` : "";
+    this.refreshDiff(n);
+  }
+
+  /** Header badge "+12 −3": lines changed since the last commit (B5). */
+  async refreshDiff(changedFiles) {
+    const d = changedFiles ? await invoke("git_shortstat", { root: this.root }).catch(() => null) : null;
+    const b = this.$(".diff");
+    b.hidden = !d || !(d.added || d.removed);
+    if (!b.hidden) b.textContent = `+${d.added} −${d.removed}`;
+  }
+
+  /** Open the file panel on the changed files. */
+  showChanges() {
+    if (this.density !== "full") {
+      this.setDensity("full");
+      this.app.layout();
+    }
+    this.$(".m-files").open = true;
+    this.explorer.setMode("changed");
+  }
+
+  /** Ctrl+I: code selected in the viewer as `@file Lx-y`, else text selected in a terminal (A5). */
+  insertSelection() {
+    if (this.viewer.isOpen && this.viewer.selectionRange()) return this.viewer.insertSelection();
+    const term = [this.shell?.term, this.agent.term].find((t) => t?.hasSelection());
+    if (!term) return this.viewer.insertSelection();
+    const text = term.getSelection().replace(/[ \t]+$/gm, "").trim();
+    if (text) this.composer.insert("\n```\n" + text + "\n```\n");
+  }
+
+  /** A second copy of this project in a git worktree, as its own card with its own agent (B4). */
+  async openWorktree() {
+    try {
+      const path = await invoke("git_worktree_add", { root: this.root });
+      this.app.addCard({ path, agent: this.adapter?.name });
+    } catch (e) {
+      message(`worktree를 만들지 못했습니다: ${e}`, { kind: "error" });
+    }
   }
 
   onOutput() {
-    if (!this.hooks && this.status !== "working") this.setStatus("working", "출력 중");
+    // The CLI redraws right after reporting a turn end; that is not new work.
+    const settling = this.status === "done" && Date.now() - (this.doneAt ?? 0) < 2000;
+    if (!this.hooks && this.status !== "working" && !settling) this.setStatus("working", "출력 중");
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => this.onSilence(), this.hooks ? 1500 : 3000);
     if (!this.peekTimer) {
@@ -214,13 +290,24 @@ export class Card {
     if (this.hooks) {
       if (this.status === "starting") this.setStatus("idle", "준비됨");
     } else if (this.status === "working" || this.status === "starting") {
-      const turnEnded = this.status === "working";
+      // With exact turn ends, silence only means "maybe waiting" (e.g. an approval prompt).
+      const turnEnded = this.status === "working" && !this.exactStop;
       this.setStatus("idle", "입력 대기 추정");
       if (turnEnded) this.afterTurn();
     }
   }
 
   onHook(event, data) {
+    // Agents without full hooks may still report turn ends (Codex `notify`): "done" is then exact.
+    if (!this.hooks) {
+      if (event !== "stop") return;
+      this.exactStop = true;
+      this.doneAt = Date.now();
+      clearTimeout(this.idleTimer);
+      this.setStatus("done", "완료");
+      this.onFsChange();
+      return this.afterTurn();
+    }
     if (data?.transcript) this.transcript = data.transcript;
     if (event === "prompt") {
       if (this.turnAsk || this.turn?.texts?.length) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
@@ -351,6 +438,15 @@ export class Card {
   }
 
   onExit(code, err) {
+    // Nothing to resume in this folder yet: the CLI quits at once, so start a new conversation.
+    if (this.resuming && !err && Date.now() - this.startedAt < 15000) {
+      this.resuming = false;
+      this.agent.term.write("\x1b[90m이어갈 대화가 없어 새로 시작합니다.\x1b[0m\r\n");
+      this.setStatus("starting", "시작 중");
+      this.startedAt = Date.now();
+      return this.agent.start();
+    }
+    this.resuming = false;
     this.rotating = null;
     this.setStatus("exited", err ? "실행 실패" : "종료됨");
     this.$(".b-restart").hidden = false;
@@ -442,9 +538,10 @@ export class Card {
     const box = this.$(".shell");
     if (!this.shell) {
       box.hidden = false;
-      this.shell = new Pty(box, { cwd: this.root, command: this.app.shell });
-      requestAnimationFrame(() => {
-        this.shell.start();
+      this.shell = new Pty(box, { key: `${this.root}#shell`, cwd: this.root, command: this.app.shell, scrollback: 2000 });
+      requestAnimationFrame(async () => {
+        const live = this.app.takeLive(this.shell.key);
+        if (!(live && (await this.shell.attach(live.id)))) this.shell.start();
         this.shell.term.focus();
       });
       return;

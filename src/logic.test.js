@@ -136,3 +136,20 @@ test("menus and permission lines", () => {
   assert.deepEqual(menuChoices(["just text"]), []);
   assert.equal(permissionLine("Bash", "rm -rf build"), "허용하면 이 명령이 실행됩니다: rm -rf build");
 });
+
+test("replySuggestions offers listed options or yes/no only after a question", async () => {
+  const { replySuggestions } = await import("./logic.js");
+  assert.deepEqual(replySuggestions(["테스트를 모두 고쳤습니다."]), []);
+  assert.deepEqual(replySuggestions([]), []);
+  const yn = replySuggestions(["변경을 마쳤습니다.\n\n커밋까지 할까요?"]);
+  assert.deepEqual(yn.map((r) => r.label), ["네, 진행", "아니요"]);
+  const opts = replySuggestions([
+    "두 가지 방법이 있습니다.\n\n1. **캐시 추가** — 빠르지만 메모리를 씁니다\n2. 쿼리 최적화: 느리지만 안전\n\n어느 쪽으로 할까요?",
+  ]);
+  assert.deepEqual(opts, [
+    { label: "1. 캐시 추가", text: "1번으로 진행해줘" },
+    { label: "2. 쿼리 최적화", text: "2번으로 진행해줘" },
+  ]);
+  const letters = replySuggestions(["A) 지금 배포\nB) 내일 배포\nWhich one?"]);
+  assert.deepEqual(letters.map((r) => r.text), ["A안으로 진행해줘", "B안으로 진행해줘"]);
+});

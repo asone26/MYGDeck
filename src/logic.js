@@ -276,3 +276,34 @@ export function routeInput(text) {
 export const ROUTE_CHIP = { cli: "⌨ cli", ask: "?? ask", code: "🛠 code", deep: "🧠 deep", search: "🔍 search" };
 /** Tab cycles the paths the deck can currently reach. */
 export const nextRoute = (route, reachable) => reachable[(reachable.indexOf(route) + 1) % reachable.length];
+
+// ---- Quick replies (A2): the answer ends by asking the user, so offer the likely answers as buttons ----
+
+const ASKS = /[?？]\**\s*$|(할까요|될까요|드릴까요|원하시|하시겠|골라\s*주세요|선택해\s*주세요|알려\s*주세요)/;
+const OPTION = /^(?:[-*]\s+)?(?:\*\*)?(?:([1-9])[.)]|\(?([A-Da-d])\))(?:\*\*)?\s+(.+)$/;
+
+/**
+ * Replies for an answer that ends with a question: its listed options ("1. …", "A) …") near the end,
+ * otherwise yes/no. [] when the answer does not ask anything. Each is { label, text } (text goes to the agent).
+ */
+export function replySuggestions(texts) {
+  const lines = String(texts?.at(-1) ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.slice(-3).some((l) => ASKS.test(l))) return [];
+  const opts = [];
+  for (const l of lines.slice(-15)) {
+    const m = OPTION.exec(l);
+    if (!m) continue;
+    const key = m[1] ?? m[2].toUpperCase();
+    if (opts.some((o) => o.key === key)) opts.length = 0; // a new list restarts the numbering
+    const label = m[3].replace(/\*\*|`/g, "").replace(/\s*[:：—–-]\s.*$/, "").trim();
+    opts.push({ key, label: clip(`${key}. ${label}`, 48), text: m[1] ? `${key}번으로 진행해줘` : `${key}안으로 진행해줘` });
+  }
+  if (opts.length >= 2) return opts.slice(0, 6).map(({ label, text }) => ({ label, text }));
+  return [
+    { label: "네, 진행", text: "네, 진행해줘" },
+    { label: "아니요", text: "아니요, 그건 하지 말아줘" },
+  ];
+}

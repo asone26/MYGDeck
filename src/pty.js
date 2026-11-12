@@ -11,32 +11,31 @@ let seq = 0;
 /** Live sessions by PTY id, so backend events can find their terminal. */
 export const ptys = new Map();
 
-/** One real CLI process shown in an xterm. The CLI itself is never altered (spec 1.4 ⑧). */
+/**
+ * One real CLI process shown in an xterm. The CLI itself is never altered (spec 1.4 ⑧).
+ * The process lives in the session daemon: `key` (project + role) lets a reopened window find it again.
+ */
 export class Pty {
-  constructor(host, { cwd, command, onOutput, onExit }) {
-    Object.assign(this, { host, cwd, command, onOutput, onExit, alive: false });
+  constructor(host, { key, cwd, command, onOutput, onExit, scrollback = 5000 }) {
+    Object.assign(this, { host, key, cwd, command, onOutput, onExit, alive: false });
     this.term = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, 'D2Coding', monospace",
       fontSize: 13,
       cursorBlink: true,
-      scrollback: 5000,
+      scrollback,
       theme: THEME,
       allowProposedApi: true,
     });
     this.fit = new FitAddon();
     this.term.loadAddon(this.fit);
     this.term.open(host);
-    try {
-      const gl = new WebglAddon();
-      gl.onContextLoss(() => gl.dispose());
-      this.term.loadAddon(gl);
-    } catch {
-      // WebGL unavailable: xterm falls back to its DOM renderer.
-    }
+    this.covered = false;
+    this.useGl();
     this.term.attachCustomKeyEventHandler((e) => !isDeckKey(e));
     this.term.onData((d) => this.write(d));
     let queued = false;
     new ResizeObserver(() => {
+      this.useGl();
       if (queued) return;
       queued = true;
       requestAnimationFrame(() => {
@@ -46,8 +45,42 @@ export class Pty {
     }).observe(host);
   }
 
+  /**
+   * WebGL only while the terminal is on screen (A6): each one holds a GPU context and glyph atlas,
+   * and the browser drops the oldest past ~16. Hidden or covered terminals keep their buffer and
+   * fall back to the DOM renderer, which costs nothing while nothing is painted.
+   */
+  useGl() {
+    const want = !this.covered && this.host.offsetWidth > 0 && this.host.offsetHeight > 0;
+    if (want && !this.gl && !this.glFailed) {
+      try {
+        const gl = new WebglAddon();
+        gl.onContextLoss(() => {
+          gl.dispose();
+          if (this.gl === gl) this.gl = null;
+          // Contexts keep running out: stop asking for one.
+          if ((this.glLost = (this.glLost ?? 0) + 1) >= 3) this.glFailed = true;
+        });
+        this.term.loadAddon(gl);
+        this.gl = gl;
+      } catch {
+        this.glFailed = true; // WebGL unavailable: stay on the DOM renderer.
+      }
+    } else if (!want && this.gl) {
+      this.gl.dispose();
+      this.gl = null;
+    }
+  }
+
+  /** The GUI view lies over the terminal: nothing of it is visible. */
+  setCovered(covered) {
+    if (this.covered === covered) return;
+    this.covered = covered;
+    this.useGl();
+  }
+
   async start() {
-    this.id = `pty${++seq}`;
+    this.id = `${this.key}|${Date.now().toString(36)}${++seq}`;
     ptys.set(this.id, this);
     this.refit();
     this.alive = true;
@@ -59,6 +92,26 @@ export class Pty {
       this.term.write(`\r\n\x1b[31m[실행 실패] ${e}\x1b[0m\r\n`);
       this.onExit?.(null, String(e));
     }
+  }
+
+  /** Take over a session that kept running in the daemon: replay its recent output, then go live. */
+  async attach(id) {
+    Object.assign(this, { id, alive: true, replaying: true });
+    ptys.set(id, this);
+    this.refit();
+    try {
+      await invoke("pty_attach", { id });
+    } catch {
+      Object.assign(this, { alive: false, replaying: false });
+      ptys.delete(id);
+      return false;
+    }
+    // A size change makes full-screen CLIs repaint for this terminal's size.
+    const { cols, rows } = this.term;
+    invoke("pty_resize", { id, cols, rows: Math.max(2, rows - 1) })
+      .then(() => invoke("pty_resize", { id, cols, rows }))
+      .catch(() => {});
+    return true;
   }
 
   write(data) {
@@ -78,7 +131,10 @@ export class Pty {
     }
   }
 
-  received(data) {
+  received(data, replay = false) {
+    // Live output that arrived before the replay is already inside it.
+    if (replay !== !!this.replaying) return;
+    this.replaying = false;
     // During a session rotation the new session's "erase scrollback" must not wipe the old one (spec 4.4).
     if (this.keepScrollback) data = data.replaceAll("\x1b[3J", "");
     this.term.write(data);

@@ -205,6 +205,49 @@ pub fn git_ahead(root: String) -> u32 {
     git(&root, &["rev-list", "--count", "HEAD", "--not", "--remotes"]).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
 }
 
+/// Lines added and removed since HEAD, for the card header (B5). None before the first commit.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct DiffStat {
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// Parse `git diff --shortstat`: " 3 files changed, 10 insertions(+), 2 deletions(-)".
+pub fn parse_shortstat(s: &str) -> DiffStat {
+    let num = |key: &str| {
+        s.split(',').find(|p| p.contains(key)).and_then(|p| p.split_whitespace().next()).and_then(|n| n.parse().ok()).unwrap_or(0)
+    };
+    DiffStat { files: num("changed"), added: num("insertion"), removed: num("deletion") }
+}
+
+#[tauri::command]
+pub fn git_shortstat(root: String) -> Option<DiffStat> {
+    git(&root, &["diff", "--shortstat", "HEAD"]).map(|s| parse_shortstat(&s))
+}
+
+/// "worktree로 하나 더 열기" (B4): a sibling folder `<repo>-wtN` on a new branch `mygdeck/wtN` from
+/// HEAD, so a second agent works on the same project without touching the first one's files.
+#[tauri::command]
+pub fn git_worktree_add(root: String) -> Result<String, String> {
+    let top = run_git(&root, &["rev-parse", "--show-toplevel"]).map_err(|_| "git 저장소가 아닙니다".to_string())?;
+    let top = PathBuf::from(top.trim());
+    let name = top.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("저장소 이름을 알 수 없습니다")?;
+    let parent = top.parent().ok_or("상위 폴더가 없습니다")?;
+    let repo = top.to_string_lossy().into_owned();
+    for n in 2..100 {
+        let dir = parent.join(format!("{name}-wt{n}"));
+        let branch = format!("mygdeck/wt{n}");
+        if dir.exists() || git(&repo, &["rev-parse", "--verify", "--quiet", &branch]).is_some() {
+            continue;
+        }
+        let path = dir.to_string_lossy().replace('\\', "/");
+        run_git(&repo, &["worktree", "add", "-q", "-b", &branch, &path, "HEAD"])?;
+        return Ok(path);
+    }
+    Err("worktree 이름을 정하지 못했습니다".into())
+}
+
 #[derive(Serialize)]
 pub struct Spec {
     name: String,
@@ -302,6 +345,33 @@ mod tests {
             [("src/a.rs", 'M'), ("new.txt", 'A'), ("gone.rs", 'D'), ("b.rs", 'M'), ("added.rs", 'A')]
                 .map(|(p, c)| (p.to_string(), c))
         );
+    }
+
+    #[test]
+    fn shortstat_and_worktree() {
+        assert_eq!(parse_shortstat(" 3 files changed, 10 insertions(+), 2 deletions(-)\n"), DiffStat { files: 3, added: 10, removed: 2 });
+        assert_eq!(parse_shortstat(" 1 file changed, 1 deletion(-)"), DiffStat { files: 1, added: 0, removed: 1 });
+        assert_eq!(parse_shortstat(""), DiffStat { files: 0, added: 0, removed: 0 });
+
+        let base = std::env::temp_dir().join(format!("mygdeck-wt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("proj");
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("a.txt"), "v1\n").unwrap();
+        git_save(root.clone(), "first".into()).unwrap();
+        std::fs::write(dir.join("a.txt"), "v2\nv3\n").unwrap();
+        assert_eq!(git_shortstat(root.clone()), Some(DiffStat { files: 1, added: 2, removed: 1 }));
+        let wt = git_worktree_add(root.clone()).unwrap();
+        assert!(wt.ends_with("proj-wt2"), "{wt}");
+        assert_eq!(std::fs::read_to_string(format!("{wt}/a.txt")).unwrap().trim_end(), "v1"); // from HEAD, not the dirty copy
+        assert!(git_worktree_add(root.clone()).unwrap().ends_with("proj-wt3"));
+        assert!(git_worktree_add(base.to_string_lossy().into_owned()).is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -1,12 +1,12 @@
 # mygdeck
 
 여러 프로젝트의 코딩 에이전트 CLI(Claude Code, Codex, Gemini CLI…)를 한 창에서 나란히 굴리는 바이브 코딩용 IDE.
-기획 문서는 [master.md](master.md).
+창을 닫아도 에이전트는 계속 돌고, 다시 열면 하던 화면 그대로 이어 붙는다. 기획 문서는 [master.md](master.md).
 
 ## 실행
 
-**`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열립니다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보입니다). 처음 한 번은 자동으로 빌드합니다(몇 분). 코드를 고친 뒤에는 `mygdeck.bat rebuild`.
-프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Alt+N`)로 폴더를 골라 추가합니다.
+**`mygdeck.vbs`를 더블클릭**하면 콘솔 창 없이 바로 열린다(`mygdeck.bat`도 되지만 콘솔 창이 잠깐 보인다). 처음 한 번은 자동으로 빌드한다(몇 분). 코드를 고친 뒤에는 `mygdeck.bat rebuild`.
+프로젝트는 빈 화면의 `+ 프로젝트 폴더 추가`(또는 `Ctrl+'`)로 폴더를 골라 추가한다.
 
 개발용 명령:
 
@@ -14,7 +14,7 @@
 npm install
 npm run tauri dev                 # 개발 실행 (mygdeck.json의 프로젝트를 연다)
 npm run tauri dev -- -- C:/work/a C:/work/b   # 프로젝트 경로를 직접 넘기기
-npx tauri build --no-bundle       # 단일 실행 파일 빌드 (src-tauri/target/release/mygdeck.exe)
+npx tauri build --no-bundle       # 실행 파일 빌드 (src-tauri/target/release/mygdeck.exe, mygdeck-cli.exe)
 ```
 
 프로젝트 목록은 `mygdeck.json`(현재 폴더, 없으면 홈 폴더)에 저장되어 다음 실행 때 그대로 열린다.
@@ -23,35 +23,70 @@ npx tauri build --no-bundle       # 단일 실행 파일 빌드 (src-tauri/targe
 {
   "projects": [
     { "path": "C:/work/mygstat", "agent": "claude-code", "spec_file": "MASTER_SPEC.md" },
-    { "path": "C:/work/api", "command": "ssh myserver claude" }
+    { "path": "C:/work/api", "command": "ssh -t myserver claude" },
+    { "path": "C:/work/web", "resume": false }
   ]
 }
 ```
 
+`resume: false`는 재부팅 뒤 덱을 열 때 이전 대화 대신 새 대화로 시작한다(아래 [세션 유지](#세션-유지) 참고). 서버 쪽 세션까지 유지하려면 [docs/remote.md](docs/remote.md)의 tmux 설정을 쓴다.
+
 ## 단축키
+
+덱 단축키는 모두 `Ctrl` 조합이다. 나머지 키는 CLI로 그대로 간다.
 
 | 키 | 동작 |
 |---|---|
-| `Alt+1~9` / `Alt+←→` | 프로젝트 이동 |
-| `Alt+J` | 입력을 기다리는 다음 프로젝트로 |
-| `Alt+O` | 전체 보기 |
-| `Alt+=` / `Alt+-` | 카드 크기 (Full · Compact · Mini) |
-| `Alt+↑↓` | 카드 안 포커스 이동 (파일 · CLI · 입력창) |
-| `Ctrl+P` | 파일 빠른 열기 (CLI에 포커스가 없을 때) |
-| `Alt+I` | 코드 뷰어에서 선택한 코드를 입력창에 `@파일 L줄` 로 넣기 |
-| `Alt+T` | 사용자 셸 열기/닫기 |
-| `Alt+X` | 에이전트 작업 중지 (입력창 옆 `■ 중지`와 같음) |
-| `Alt+C` | 요약 화면 ↔ 원본 CLI |
-| `Alt+N` / `Alt+W` | 프로젝트 추가 / 닫기 |
+| `Ctrl+1~9` / `Ctrl+PageUp·PageDown` | 프로젝트 이동 |
+| `Ctrl+Space` | 입력을 기다리는 다음 프로젝트로 (승인 대기 → 실패 → 완료 순) |
+| `Ctrl+0` | 전체 보기 |
+| `Ctrl+=` / `Ctrl+-` | 카드 크기 (Full · Compact · Mini) |
+| `Ctrl+Tab` | 카드 안 포커스 이동 (파일 · CLI · 입력창) |
+| `Ctrl+P` | 파일 빠른 열기 (터미널(CLI·셸)에 포커스가 없을 때) |
+| `Ctrl+I` | 선택한 내용을 입력창에 넣기: 코드 뷰어 선택은 `@파일 L줄`, 터미널 선택은 코드 블록 |
+| `Ctrl+;` | 스펙 패널 열기/닫기 |
+| `` Ctrl+` `` | 사용자 셸 열기/닫기 |
+| `Ctrl+Q` | 에이전트 작업 중지 (입력창 옆 `■ 중지`와 같음) |
+| `Ctrl+.` | GUI 화면 ↔ 원본 CLI |
+| `Ctrl+'` / `Ctrl+F4` | 프로젝트 추가 / 닫기 |
+
+## 세션 유지
+
+에이전트와 셸은 앱 창이 아니라 **세션 데몬**(`mygdeck --daemon`, 메모리 9~15 MB)이 실행한다.
+
+- 창을 닫거나 새로고침해도 에이전트는 하던 일을 계속한다. 다시 열면 최근 출력(세션당 256 KB)을 되살려 이어 붙는다.
+- 카드를 닫으면(`Ctrl+F4`) 그 프로젝트의 에이전트와 셸이 끝난다. 창도 세션도 없는 상태가 30초 이어지면 데몬도 스스로 끝난다.
+- 재부팅처럼 데몬까지 꺼진 뒤에는 어댑터의 `resume_args`로 프로젝트의 마지막 대화를 다시 연다(Claude Code는 `--continue`). 이어갈 대화가 없으면 새로 시작한다. 이 재부팅 복원 경로는 아직 실제로 돌려 보지 않았다([확인 상태](docs/adapters.md#확인-상태)).
+- 창이 뒤에 있을 때 프로젝트가 승인을 기다리거나 작업을 마치면 Windows 알림과 작업 표시줄 깜빡임으로 알린다. 창으로 돌아오면 그 프로젝트로 바로 이동한다.
+
+### 터미널에서 다루기 (`mygdeck-cli`)
+
+```bash
+mygdeck-cli status            # 프로젝트별 상태: working · waiting · done · idle
+mygdeck-cli status --json     # 스크립트용
+mygdeck-cli send api "테스트 돌리고 실패한 것만 고쳐줘"   # 폴더 이름 또는 전체 경로
+mygdeck-cli daemon stop       # 데몬과 모든 세션 종료
+```
+
+`send`는 hooks로 상태를 받는 에이전트(Claude Code)가 승인을 기다리는 중이면 거절한다. 그때 입력하면 승인 메뉴의 선택지가 눌리기 때문이다. 다른 에이전트와 원격 카드는 막지 않고, `status`에도 승인 대기가 나오지 않는다(working·idle만 표시). 이런 카드에는 창에서 화면을 확인한 뒤 보낸다. 폴더 이름이 여러 프로젝트에 걸리면 전체 경로를 쓰라고 거절한다.
+
+## 카드 기능
+
+- **GUI 화면**: hooks를 지원하는 에이전트(Claude Code)는 요청·진행 단계·답변을 정리해 보여 준다. 답변이 질문으로 끝나면 선택지(`1번으로 진행해줘` 등)나 네/아니요를 버튼으로 낸다.
+- **변경 배지**: 헤더의 `+12 −3`은 마지막 커밋 이후 바뀐 줄 수다. 누르면 변경 파일 목록이 열린다.
+- **worktree로 하나 더 열기**: 에이전트 선택 메뉴의 `⑂` 항목. 옆 폴더 `<저장소>-wtN`에 새 브랜치 `mygdeck/wtN`을 만들어 카드로 연다. 마지막 커밋(HEAD)에서 만들므로 커밋하지 않은 변경은 새 카드에 없다. 같은 프로젝트에서 두 번째 에이전트가 첫 번째의 파일을 건드리지 않고 일한다. 다 쓴 worktree는 `git worktree remove <폴더>`로 지운다.
+- **원격 서버**: [docs/remote.md](docs/remote.md)
 
 ## 에이전트 어댑터
 
-`src-tauri/adapters/*.toml`이 기본 어댑터이고, `~/.mygdeck/adapters/*.toml`을 추가하면 새 에이전트를 붙일 수 있다(코드 수정 없음).
+`src-tauri/adapters/*.toml`이 기본 어댑터이고, `~/.mygdeck/adapters/*.toml`을 추가하면 새 에이전트를 붙일 수 있다(코드 수정 없음). 필드 설명과 예시는 [docs/adapters.md](docs/adapters.md).
 Claude Code는 덱 전용 hooks 설정을 `--settings`로 넘겨 승인 대기·작업 완료 상태를 받는다. 사용자의 Claude 설정 파일은 건드리지 않는다.
 
 ## 테스트
 
 ```bash
 npm test                          # 프론트엔드 로직
-cd src-tauri && cargo test        # 백엔드 (PTY 실행, hooks 전달, git 파싱 등)
+cd src-tauri && cargo test        # 백엔드 (세션 데몬, PTY 실행, hooks 전달, git 등)
 ```
+
+자동 테스트가 못 잡는 입력·표시 문제는 릴리스 전에 [docs/regression-checklist.md](docs/regression-checklist.md)로 손으로 확인한다. 배포와 크래시 로그는 [docs/release.md](docs/release.md).

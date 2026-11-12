@@ -4,6 +4,8 @@ import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Card } from "./card.js";
 import { openConnections, refreshPool } from "./connections.js";
 import { ptys } from "./pty.js";
@@ -22,6 +24,12 @@ const app = {
   setActive,
   closeCard,
   renderStrip,
+  live: [],
+  takeLive,
+  save,
+  addCard,
+  layout,
+  onStatus,
   onPeek: () => overlayKind === "overview" && renderOverview(),
 };
 
@@ -29,11 +37,20 @@ let overlayKind = null;
 let overviewSel = 0;
 
 async function boot() {
-  await invoke("pty_reset");
-  const [loaded, adapters, shell] = await Promise.all([invoke("load_config"), invoke("list_adapters"), invoke("default_shell")]);
-  Object.assign(app, { adapters, shell, source: loaded.source });
-  await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data));
+  await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data, !!e.payload.replay));
   await listen("pty-exit", (e) => ptys.get(e.payload.id)?.exited(e.payload.code));
+  await listen("daemon-lost", () => [...ptys.values()].forEach((p) => p.exited(null)));
+  // Sessions that kept running in the daemon while the window was closed (or reloading).
+  const [loaded, adapters, shell, live] = await Promise.all([
+    invoke("load_config"),
+    invoke("list_adapters"),
+    invoke("default_shell"),
+    invoke("pty_list").catch((e) => {
+      console.error("session daemon unavailable", e);
+      return [];
+    }),
+  ]);
+  Object.assign(app, { adapters, shell, source: loaded.source, live });
   await listen("agent-hook", (e) => app.cards.find((c) => c.agent.id === e.payload.id)?.onHook(e.payload.event, e.payload.data));
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
   refreshPool();
@@ -43,10 +60,45 @@ async function boot() {
     overlay.hidden = false;
     openConnections(overlay);
   };
-  for (const p of loaded.config.projects) addCard(p, false);
+  for (const p of loaded.config.projects) addCard(p, false, true);
+  // Sessions of projects that are no longer in the deck would run unseen forever.
+  for (const s of app.live) if (!app.cards.some((c) => s.id.startsWith(`${c.root}#`))) invoke("pty_kill", { id: s.id }).catch(() => {});
   app.active = 0;
   layout();
   app.cards[0]?.focusDefault();
+}
+
+// ---- Attention (A3): a project that needs the user reaches them even when the deck is in the background ----
+
+const NOTIFY_GAP = 5000;
+let notifyAllowed = null;
+let jumpTo = null; // card to show when the user comes back to the window
+
+async function onStatus(card, prev) {
+  if (!["waiting", "done"].includes(card.status) || card.rotating || prev === "starting") return;
+  if (document.hasFocus()) return; // the header strip already shows it
+  if (Date.now() - (card.notifiedAt ?? 0) < NOTIFY_GAP) return;
+  card.notifiedAt = Date.now();
+  if (card.status === "waiting" || !jumpTo) jumpTo = card; // a permission prompt outranks a finished turn
+  const win = getCurrentWindow();
+  win.requestUserAttention(card.status === "waiting" ? UserAttentionType.Critical : UserAttentionType.Informational).catch(() => {});
+  notifyAllowed ??= (await isPermissionGranted().catch(() => false)) || (await requestPermission().catch(() => "denied")) === "granted";
+  if (!notifyAllowed) return;
+  const what = card.status === "waiting" ? card.statusText || "입력을 기다립니다" : `완료${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`;
+  sendNotification({ title: `mygdeck · ${card.name}`, body: what });
+}
+
+window.addEventListener("focus", () => {
+  const c = jumpTo;
+  jumpTo = null;
+  const i = app.cards.indexOf(c);
+  if (i >= 0 && ["waiting", "done"].includes(c.status)) setActive(i);
+});
+
+/** A running daemon session for `key` (project + role), handed out once. */
+function takeLive(key) {
+  const i = app.live.findIndex((s) => s.id.startsWith(`${key}|`));
+  return i < 0 ? null : app.live.splice(i, 1)[0];
 }
 
 function adapterFor(cfg) {
@@ -55,14 +107,15 @@ function adapterFor(cfg) {
   return app.adapters.find((a) => a.name === want) ?? null;
 }
 
-function addCard(cfg, persist = true) {
+/** `restore`: the card comes back from the saved deck, so its agent reopens the last conversation. */
+function addCard(cfg, persist = true, restore = false) {
   const card = new Card(app, cfg, adapterFor(cfg));
   app.cards.push(card);
   dragToSwap(card);
   app.active = app.cards.length - 1;
   layout();
   // Start after layout so the terminal knows its real size.
-  requestAnimationFrame(() => card.start());
+  requestAnimationFrame(() => card.start({ resume: restore }));
   if (persist) save();
 }
 
@@ -305,7 +358,7 @@ window.addEventListener(
     } else if (k === "PageUp" || k === "PageDown") {
       setActive((app.active + (k === "PageDown" ? 1 : -1) + app.cards.length) % app.cards.length);
     } else if (k === "Tab") c.cycleFocus(1);
-    else if (k === "KeyI") c.viewer.insertSelection();
+    else if (k === "KeyI") c.insertSelection();
     else if (k === "Backquote") c.toggleShell();
     else if (k === "Period") c.toggleView();
     else if (k === "Semicolon") c.toggleSpec();

@@ -1,6 +1,9 @@
 pub mod adapters;
 pub mod ai;
+pub mod cli;
 pub mod config;
+pub mod crash;
+pub mod daemon;
 pub mod fsx;
 pub mod hooks;
 pub mod pty;
@@ -13,12 +16,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(pty::Ptys::default())
+        .plugin(tauri_plugin_notification::init())
+        .manage(pty::Daemon::default())
         .manage(watch::Watchers::default())
         .setup(|app| {
-            let port = hooks::listen(app.handle().clone())?;
-            let claude_settings = hooks::write_claude_settings(app.handle())?;
-            app.manage(hooks::HookInfo { port, claude_settings });
+            // Hooks run from the daemon's stable copy of this program, so a rebuild cannot break them.
+            let hook_exe = daemon::stable_exe().to_string_lossy().replace('\\', "/");
+            let claude_settings = hooks::write_claude_settings(app.handle(), &hook_exe)?;
+            app.manage(hooks::HookInfo { claude_settings, hook_exe });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -35,7 +40,8 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
-            pty::pty_reset,
+            pty::pty_list,
+            pty::pty_attach,
             pty::default_shell,
             fsx::list_dir,
             fsx::list_files,
@@ -47,6 +53,8 @@ pub fn run() {
             fsx::git_diff,
             fsx::git_push,
             fsx::git_ahead,
+            fsx::git_shortstat,
+            fsx::git_worktree_add,
             fsx::save_paste,
             fsx::open_file,
             fsx::rename_file,
@@ -54,11 +62,7 @@ pub fn run() {
             watch::watch_project,
             watch::unwatch_project,
         ])
-        .build(tauri::generate_context!())
-        .expect("failed to build mygdeck")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<pty::Ptys>().kill_all();
-            }
-        });
+        // Sessions belong to the daemon and keep running after the window closes.
+        .run(tauri::generate_context!())
+        .expect("failed to run mygdeck");
 }

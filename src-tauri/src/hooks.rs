@@ -1,15 +1,16 @@
-//! Agent status via hooks. The deck listens on a local TCP port; the agent runs this same
-//! binary as its hook command (`mygdeck --hook <event>`), which forwards a trimmed payload.
+//! Agent status via hooks. The agent runs this same binary as its hook command
+//! (`mygdeck --hook <event>`), which forwards a trimmed payload to the session daemon's port.
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 pub struct HookInfo {
-    pub port: u16,
     /// Settings file passed to Claude Code with `--settings`, so the user's own settings stay untouched.
     pub claude_settings: String,
+    /// Program agents run as their hook command (`{hook_exe}` in adapters, e.g. Codex `notify`).
+    pub hook_exe: String,
 }
 
 #[derive(Clone, serde::Serialize, Debug, PartialEq)]
@@ -17,22 +18,6 @@ pub struct HookEvent {
     pub id: String,
     pub event: String,
     pub data: Value,
-}
-
-pub fn listen(app: AppHandle) -> std::io::Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                if let Some(ev) = parse_line(&line) {
-                    let _ = app.emit("agent-hook", ev);
-                }
-            }
-        }
-    });
-    Ok(port)
 }
 
 pub fn parse_line(line: &str) -> Option<HookEvent> {
@@ -47,12 +32,18 @@ pub fn parse_line(line: &str) -> Option<HookEvent> {
 }
 
 /// Entry point of the hook process. It must never disturb the agent: no output, always exit 0.
-pub fn send(event: &str) {
+/// Claude Code pipes the payload on stdin; Codex `notify` passes it as the last argument.
+pub fn send(event: &str, arg_payload: Option<&str>) {
     let (Ok(id), Ok(port)) = (std::env::var("MYGDECK_ID"), std::env::var("MYGDECK_PORT")) else {
         return;
     };
     let mut input = String::new();
-    let _ = std::io::stdin().take(4 << 20).read_to_string(&mut input);
+    match arg_payload {
+        Some(p) => input.push_str(p),
+        None => {
+            let _ = std::io::stdin().take(4 << 20).read_to_string(&mut input);
+        }
+    }
     send_to(&id, &port, event, &input);
 }
 
@@ -89,8 +80,7 @@ pub fn trim_payload(raw: &str) -> String {
     .to_string()
 }
 
-pub fn write_claude_settings(app: &AppHandle) -> Result<String, Box<dyn std::error::Error>> {
-    let exe = std::env::current_exe()?.to_string_lossy().replace('\\', "/");
+pub fn write_claude_settings(app: &AppHandle, exe: &str) -> Result<String, Box<dyn std::error::Error>> {
     let hook = |ev: &str| json!([{ "hooks": [{ "type": "command", "command": format!("\"{exe}\" --hook {ev}") }] }]);
     let mut tool = hook("tool");
     tool[0]["matcher"] = json!("*");
@@ -110,6 +100,8 @@ pub fn write_claude_settings(app: &AppHandle) -> Result<String, Box<dyn std::err
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
 
     #[test]
     fn trims_large_tool_input() {

@@ -1,0 +1,9 @@
+# opencode (https://opencode.ai) — copy to ~/.mygdeck/adapters/opencode.toml
+# Flags checked against opencode 1.18 (`opencode --help`); slash commands from the opencode docs.
+name = "opencode"
+launch = "opencode"
+resume_args = "--continue"
+mention = "@{path}"
+clear_cmd = "/new"
+status = "idle"
+commands = ["/help", "/new", "/sessions", "/models", "/compact", "/undo", "/redo", "/share", "/init", "/exit"]

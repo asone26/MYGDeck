@@ -7,6 +7,10 @@ pub struct Adapter {
     pub launch: String,
     #[serde(default)]
     pub hook_args: String,
+    /// Arguments that reopen the project's last conversation (e.g. `--continue`); used when the
+    /// deck starts again after the session daemon was gone (reboot). Empty: always a new session.
+    #[serde(default)]
+    pub resume_args: String,
     #[serde(default = "default_mention")]
     pub mention: String,
     #[serde(default)]
@@ -76,9 +80,18 @@ pub fn list_adapters() -> Vec<Adapter> {
 mod tests {
     #[test]
     fn builtin_adapters_parse() {
-        for src in super::BUILTIN {
+        // The documented example must stay loadable too.
+        for src in super::BUILTIN.into_iter().chain([include_str!("../../docs/adapters/opencode.toml")]) {
             let a: super::Adapter = toml::from_str(src).expect("adapter toml");
             assert!(!a.launch.is_empty(), "{}", a.name);
         }
+    }
+
+    #[test]
+    fn codex_notify_reaches_the_hook_program() {
+        let codex: super::Adapter = toml::from_str(super::BUILTIN[1]).unwrap();
+        let cmd = format!("{} {} {}", codex.launch, codex.hook_args, codex.resume_args);
+        let argv = crate::pty::expand_command(&cmd, "s.json", "C:/Users/a b/m.exe");
+        assert_eq!(argv, ["codex", "-c", "notify=['C:/Users/a b/m.exe','--hook','stop']", "resume", "--last"]);
     }
 }

@@ -1,46 +1,107 @@
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+//! Terminal sessions as the window sees them. The PTYs live in the session daemon (daemon.rs) so
+//! they survive the window; these commands forward to it and its events come back as Tauri events.
+use crate::daemon::{self, PROTO};
+use portable_pty::CommandBuilder;
+use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-struct Session {
-    master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
-    killer: Box<dyn ChildKiller + Send + Sync>,
-}
+type Reply = Result<Value, String>;
 
-/// Live PTY sessions, keyed by the id the frontend picked for each spawn.
+/// The window's connection to the session daemon, opened on first use and reopened after a loss.
 #[derive(Default)]
-pub struct Ptys(Mutex<HashMap<String, Session>>);
+pub struct Daemon {
+    conn: Mutex<Option<TcpStream>>,
+    pending: Mutex<HashMap<u64, Sender<Reply>>>,
+    seq: AtomicU64,
+}
 
-impl Ptys {
-    pub fn kill_all(&self) {
-        for (_, mut s) in self.0.lock().unwrap().drain() {
-            let _ = s.killer.kill();
+impl Daemon {
+    fn ensure(&self, app: &AppHandle) -> Result<(), String> {
+        let mut conn = self.conn.lock().unwrap();
+        if conn.is_some() {
+            return Ok(());
         }
+        let info = daemon::ensure_running()?;
+        let (stream, reader, hello) = daemon::open(&info, true)?;
+        if hello["proto"].as_u64() != Some(PROTO) {
+            return Err("세션 데몬 버전이 다릅니다. `mygdeck-cli daemon stop` 후 다시 여세요.".into());
+        }
+        let app = app.clone();
+        thread::spawn(move || {
+            for l in reader.lines().map_while(Result::ok) {
+                let Ok(v) = serde_json::from_str::<Value>(&l) else { continue };
+                if let Some(re) = v["re"].as_u64() {
+                    let tx = app.state::<Daemon>().pending.lock().unwrap().remove(&re);
+                    if let Some(tx) = tx {
+                        let _ = tx.send(match v.get("err") {
+                            Some(e) => Err(e.as_str().unwrap_or("error").to_string()),
+                            None => Ok(v["ok"].clone()),
+                        });
+                    }
+                    continue;
+                }
+                let name = match v["ev"].as_str() {
+                    Some("data") => "pty-data",
+                    Some("exit") => "pty-exit",
+                    Some("hook") => "agent-hook",
+                    _ => continue,
+                };
+                let _ = app.emit(name, v);
+            }
+            // The daemon went away: every session it held is gone with it.
+            let d = app.state::<Daemon>();
+            *d.conn.lock().unwrap() = None;
+            for (_, tx) in d.pending.lock().unwrap().drain() {
+                let _ = tx.send(Err("세션 데몬 연결이 끊겼습니다".into()));
+            }
+            let _ = app.emit("daemon-lost", ());
+        });
+        *conn = Some(stream);
+        Ok(())
     }
-}
 
-#[derive(Clone, serde::Serialize)]
-struct Data {
-    id: String,
-    data: String,
-}
+    fn write_line(&self, app: &AppHandle, op: &Value) -> Result<(), String> {
+        self.ensure(app)?;
+        let mut conn = self.conn.lock().unwrap();
+        let s = conn.as_mut().ok_or("세션 데몬 연결이 끊겼습니다")?;
+        let mut l = op.to_string();
+        l.push('\n');
+        s.write_all(l.as_bytes()).map_err(|e| e.to_string())
+    }
 
-#[derive(Clone, serde::Serialize)]
-struct Exit {
-    id: String,
-    code: Option<u32>,
+    /// Request with a reply.
+    fn call(&self, app: &AppHandle, mut op: Value) -> Reply {
+        let re = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
+        op["re"] = json!(re);
+        let (tx, rx) = channel();
+        self.pending.lock().unwrap().insert(re, tx);
+        if let Err(e) = self.write_line(app, &op) {
+            self.pending.lock().unwrap().remove(&re);
+            return Err(e);
+        }
+        rx.recv_timeout(Duration::from_secs(15)).unwrap_or_else(|_| Err("세션 데몬이 응답하지 않습니다".into()))
+    }
+
+    /// Fire and forget: keystrokes and resizes must not wait for a round trip.
+    fn cast(&self, app: &AppHandle, op: Value) -> Result<(), String> {
+        self.write_line(app, &op)
+    }
 }
 
 /// Runtime variables a running Claude Code session sets for its children. If the deck itself was
 /// started from such a session, each card's agent would think it is a sub-session (and, e.g., stop
 /// saving its transcript). Every card must be an independent top-level session.
 /// shortcut: list taken from one observed parent session; extend if new session-scoped vars appear.
-const INHERITED_SESSION_VARS: [&str; 15] = [
+pub const INHERITED_SESSION_VARS: [&str; 15] = [
     "CLAUDECODE",
     "CLAUDE_PID",
     "CLAUDE_EFFORT",
@@ -64,15 +125,17 @@ pub fn is_editor_var(k: &str) -> bool {
         || matches!(k, "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "CLAUDE_CODE_SSE_PORT" | "ENABLE_IDE_INTEGRATION")
 }
 
-fn err<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+
+/// `{settings}` and `{hook_exe}` in an adapter's command become the deck's hook settings and hook program.
+pub fn expand_command(command: &str, settings: &str, hook_exe: &str) -> Vec<String> {
+    split_command(command).into_iter().map(|a| a.replace("{settings}", settings).replace("{hook_exe}", hook_exe)).collect()
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
     app: AppHandle,
-    ptys: State<Ptys>,
+    d: State<Daemon>,
     hooks: State<crate::hooks::HookInfo>,
     id: String,
     cwd: String,
@@ -80,86 +143,35 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let mut argv = split_command(&command);
-    for a in argv.iter_mut() {
-        *a = a.replace("{settings}", &hooks.claude_settings);
-    }
-    let mut cmd = build_command(&argv)?;
-    cmd.cwd(&cwd);
-    for k in INHERITED_SESSION_VARS {
-        cmd.env_remove(k);
-    }
-    // An agent started with an editor's environment connects to that editor and receives its
-    // open file and selection. The deck never forwards open files (spec 1.4 ⑧).
-    for (k, _) in std::env::vars() {
-        if is_editor_var(&k) {
-            cmd.env_remove(k);
-        }
-    }
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
-    cmd.env("MYGDECK_ID", &id);
-    cmd.env("MYGDECK_PORT", hooks.port.to_string());
-
-    let size = PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 };
-    let pair = native_pty_system().openpty(size).map_err(err)?;
-    let mut child = pair.slave.spawn_command(cmd).map_err(err)?;
-    drop(pair.slave);
-    let mut reader = pair.master.try_clone_reader().map_err(err)?;
-    let writer = pair.master.take_writer().map_err(err)?;
-    let killer = child.clone_killer();
-    ptys.0.lock().unwrap().insert(id.clone(), Session { master: pair.master, writer, killer });
-
-    let (out_app, out_id) = (app.clone(), id.clone());
-    thread::spawn(move || {
-        let mut buf = [0u8; 16384];
-        let mut dec = Utf8Carry::default();
-        while let Ok(n) = reader.read(&mut buf) {
-            if n == 0 {
-                break;
-            }
-            let s = dec.push(&buf[..n]);
-            if !s.is_empty() {
-                let _ = out_app.emit("pty-data", Data { id: out_id.clone(), data: s });
-            }
-        }
-    });
-    thread::spawn(move || {
-        let code = child.wait().ok().map(|s| s.exit_code());
-        // Dropping the master closes the pseudo console, which ends the reader thread.
-        app.state::<Ptys>().0.lock().unwrap().remove(&id);
-        let _ = app.emit("pty-exit", Exit { id, code });
-    });
-    Ok(())
+    let argv = expand_command(&command, &hooks.claude_settings, &hooks.hook_exe);
+    d.call(&app, json!({ "op": "spawn", "id": id, "cwd": cwd, "argv": argv, "cols": cols, "rows": rows })).map(|_| ())
 }
 
 #[tauri::command]
-pub fn pty_write(ptys: State<Ptys>, id: String, data: String) -> Result<(), String> {
-    let mut map = ptys.0.lock().unwrap();
-    let s = map.get_mut(&id).ok_or("session closed")?;
-    s.writer.write_all(data.as_bytes()).map_err(err)?;
-    s.writer.flush().map_err(err)
+pub fn pty_write(app: AppHandle, d: State<Daemon>, id: String, data: String) -> Result<(), String> {
+    d.cast(&app, json!({ "op": "write", "id": id, "data": data }))
 }
 
 #[tauri::command]
-pub fn pty_resize(ptys: State<Ptys>, id: String, cols: u16, rows: u16) -> Result<(), String> {
-    let map = ptys.0.lock().unwrap();
-    let s = map.get(&id).ok_or("session closed")?;
-    let size = PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 };
-    s.master.resize(size).map_err(err)
-}
-
-/// Called when the page (re)loads: sessions from a previous page load have no terminal anymore.
-#[tauri::command]
-pub fn pty_reset(ptys: State<Ptys>) {
-    ptys.kill_all();
+pub fn pty_resize(app: AppHandle, d: State<Daemon>, id: String, cols: u16, rows: u16) -> Result<(), String> {
+    d.cast(&app, json!({ "op": "resize", "id": id, "cols": cols, "rows": rows }))
 }
 
 #[tauri::command]
-pub fn pty_kill(ptys: State<Ptys>, id: String) {
-    if let Some(mut s) = ptys.0.lock().unwrap().remove(&id) {
-        let _ = s.killer.kill();
-    }
+pub fn pty_kill(app: AppHandle, d: State<Daemon>, id: String) -> Result<(), String> {
+    d.cast(&app, json!({ "op": "kill", "id": id }))
+}
+
+/// Sessions still running in the daemon, e.g. from before the window was closed or reloaded.
+#[tauri::command]
+pub fn pty_list(app: AppHandle, d: State<Daemon>) -> Result<Value, String> {
+    d.call(&app, json!({ "op": "list" }))
+}
+
+/// Ask for a session's buffered output; it arrives as one `pty-data` event with `replay: true`.
+#[tauri::command]
+pub fn pty_attach(app: AppHandle, d: State<Daemon>, id: String) -> Result<(), String> {
+    d.call(&app, json!({ "op": "attach", "id": id })).map(|_| ())
 }
 
 /// The user's interactive shell, used for the per-project shell panel.
@@ -281,6 +293,8 @@ impl Utf8Carry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use portable_pty::{native_pty_system, PtySize};
+    use std::io::{Read, Write};
 
     #[test]
     fn utf8_carry_keeps_split_characters() {

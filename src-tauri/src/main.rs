@@ -3,10 +3,11 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    // The same binary doubles as the agent hook command (see hooks.rs).
-    if args.get(1).map(String::as_str) == Some("--hook") {
-        mygdeck_lib::hooks::send(args.get(2).map(String::as_str).unwrap_or(""));
-        return;
+    mygdeck_lib::crash::install();
+    match args.get(1).map(String::as_str) {
+        // The same binary doubles as the agent hook command (see hooks.rs) and the session daemon.
+        Some("--hook") => mygdeck_lib::hooks::send(args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str)),
+        Some("--daemon") => mygdeck_lib::daemon::serve(),
+        _ => mygdeck_lib::run(),
     }
-    mygdeck_lib::run();
 }

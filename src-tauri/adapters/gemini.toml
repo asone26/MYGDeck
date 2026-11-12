@@ -1,5 +1,6 @@
 name = "gemini"
 launch = "gemini"
+resume_args = "--resume latest"
 mention = "@{path}"
 clear_cmd = "/clear"
 status = "idle"

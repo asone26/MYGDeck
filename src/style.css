@@ -142,6 +142,8 @@ input, select, textarea { transition: border-color 0.15s var(--ease), box-shadow
 .head .badge { font-size: 13px; }
 .head .stext { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-size: 13px; }
 .head .ctx { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.head .diff { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.s-replies { background: transparent; }
 .head button { padding: 2px 8px; font-size: 13px; background: transparent; border-color: transparent; color: var(--muted); }
 .head button:hover { background: var(--raised); border-color: var(--line-2); color: var(--fg); }
 .mods details { border-bottom: 1px solid var(--line); }

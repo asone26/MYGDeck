@@ -2,6 +2,8 @@ name = "claude-code"
 launch = "claude --model opus --effort medium"
 # {settings} is replaced with the deck's hook settings file (status badges, spec 5.3).
 hook_args = "--settings {settings}"
+# Reopens the project's last conversation when the deck starts after a reboot.
+resume_args = "--continue"
 mention = "@{path}"
 model_cmd = "/model {model}"
 models = ["default", "opus", "sonnet", "haiku"]
