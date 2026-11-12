@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -510,6 +510,9 @@ fn handle(hub: &Arc<Hub>, token: &str, stream: TcpStream) {
             agent(&q("id")).and_then(|id| hub.output_since(&id, q("from").parse().unwrap_or(0)).map_err(|e| ("404 Not Found", e))),
         ),
         ("GET", "/api/status") => json_reply(s, Ok(json!({ "window": hub.window_open() }))),
+        // Folders to add a project from: under the home folder or next to projects the deck knows.
+        ("GET", "/api/dirs") => json_reply(s, list_dirs(hub, &q("path")).map_err(|e| ("404 Not Found", e))),
+        ("POST", "/api/add") => json_reply(s, add_project(hub, body["path"].as_str().unwrap_or("")).map(|_| Value::Null).map_err(|e| ("409 Conflict", e))),
         // The phone found no deck window: open it on the PC (its projects and agents come back).
         ("POST", "/api/open") => json_reply(s, open_app(hub).map(|opened| json!({ "opened": opened })).map_err(|e| ("409 Conflict", e))),
         ("POST", "/api/send") => {
@@ -545,6 +548,154 @@ fn handle(hub: &Arc<Hub>, token: &str, stream: TcpStream) {
         }
         _ => json_reply(s, Err(("404 Not Found", "not found".into()))),
     }
+}
+
+// ---- Adding a project from the phone ----
+
+/// Where the phone may browse: the home folder and the parents of known projects.
+fn roots(hub: &Hub) -> Vec<PathBuf> {
+    let mut paths = crate::config::saved_paths();
+    paths.extend(hub.list().as_array().into_iter().flatten().filter_map(|v| v["cwd"].as_str().map(String::from)));
+    let mut out = vec![crate::config::home()];
+    out.extend(paths.iter().filter_map(|p| Path::new(p).parent().map(Path::to_path_buf)));
+    let mut seen = Vec::new();
+    out.retain(|r| {
+        let Some(key) = r.canonicalize().ok().filter(|_| r.is_dir()) else { return false };
+        let fresh = !seen.contains(&key);
+        seen.push(key);
+        fresh
+    });
+    out
+}
+
+/// The root that holds `path` (itself or above it), compared after resolving `..` and links.
+fn root_of(path: &Path, roots: &[PathBuf]) -> Option<PathBuf> {
+    let real = path.canonicalize().ok()?;
+    roots.iter().filter_map(|r| r.canonicalize().ok()).filter(|r| real.starts_with(r)).max_by_key(|r| r.as_os_str().len())
+}
+
+const PROJECT_MARKS: &[&str] = &[".git", "package.json", "Cargo.toml", "pyproject.toml", "go.mod", "CLAUDE.md", "AGENTS.md", "master.md"];
+const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", "AppData", "Library", "Applications"];
+
+fn hidden(e: &std::fs::DirEntry) -> bool {
+    let name = e.file_name().to_string_lossy().into_owned();
+    if name.starts_with('.') || name.starts_with('$') || SKIP_DIRS.contains(&name.as_str()) {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if e.metadata().is_ok_and(|m| m.file_attributes() & 0x6 != 0) {
+            return true; // hidden or system
+        }
+    }
+    false
+}
+
+fn dir_row(path: &Path, name: String) -> Value {
+    json!({ "name": name, "path": path.to_string_lossy(), "project": PROJECT_MARKS.iter().any(|m| path.join(m).exists()) })
+}
+
+fn list_dirs(hub: &Hub, path: &str) -> Result<Value, String> {
+    let roots = roots(hub);
+    if path.is_empty() {
+        let dirs: Vec<Value> = roots
+            .iter()
+            .map(|r| dir_row(r, r.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| r.to_string_lossy().into_owned())))
+            .collect();
+        return Ok(json!({ "path": "", "parent": null, "dirs": dirs }));
+    }
+    let dir = PathBuf::from(path);
+    let root = root_of(&dir, &roots).ok_or("이 폴더는 열 수 없습니다")?;
+    let at_root = dir.canonicalize().is_ok_and(|d| d == root);
+    let parent = if at_root { None } else { dir.parent().map(|p| p.to_string_lossy().into_owned()) };
+    let mut dirs: Vec<(String, PathBuf)> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("폴더를 읽지 못했습니다: {e}"))?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !hidden(e))
+        .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+        .collect();
+    dirs.sort_by_key(|(n, _)| n.to_lowercase());
+    dirs.truncate(400);
+    let dirs: Vec<Value> = dirs.into_iter().map(|(n, p)| dir_row(&p, n)).collect();
+    Ok(json!({ "path": dir.to_string_lossy(), "parent": parent, "dirs": dirs }))
+}
+
+/// The deck window adds the card (as its own + button does), so the project is saved with the deck.
+fn add_project(hub: &Hub, path: &str) -> Result<(), String> {
+    let dir = PathBuf::from(path);
+    if path.is_empty() || !dir.is_dir() || root_of(&dir, &roots(hub)).is_none() {
+        return Err("이 폴더로는 프로젝트를 시작할 수 없습니다".into());
+    }
+    if !hub.window_open() {
+        return Err("PC에서 MYG Deck 창이 열려 있지 않습니다. 잠시 뒤 다시 시도하세요".into());
+    }
+    hub.broadcast(json!({ "ev": "add-project", "path": path }));
+    Ok(())
+}
+
+// ---- Push: tell the phone when an agent needs it ----
+
+pub struct Note {
+    title: String,
+    body: String,
+    tag: String,
+    url: String,
+    urgent: bool,
+}
+
+fn pct_encode(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+fn clip(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n - 1).collect::<String>() + "…"
+    }
+}
+
+/// What a status change says on the phone: a question (urgent) or a finished turn (quiet).
+pub fn note(id: &str, cwd: &str, before: &str, after: &str, text: &str, tool: &Value) -> Option<Note> {
+    if !id.contains("#agent|") || before == after {
+        return None;
+    }
+    let name = Path::new(cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| cwd.to_string());
+    let (title, body, urgent) = match after {
+        "waiting" => (format!("{name} · 응답 필요"), waiting_text(text, tool), true),
+        "done" if before == "working" => (format!("{name} · 완료"), "다음 지시를 기다립니다".to_string(), false),
+        _ => return None,
+    };
+    Some(Note { title, body: clip(&body, 160), tag: id.to_string(), url: format!("/#{}", pct_encode(id)), urgent })
+}
+
+fn waiting_text(msg: &str, tool: &Value) -> String {
+    let lower = msg.to_lowercase();
+    if lower.contains("permission") {
+        let t = tool["tool"].as_str().unwrap_or("");
+        if !t.is_empty() {
+            return format!("허용 요청: {t} {}", tool["detail"].as_str().unwrap_or("")).trim_end().to_string();
+        }
+        if let Some(rest) = lower.find("permission to use ").and_then(|i| msg.get(i + 18..)) {
+            return format!("{} 사용 허용을 기다립니다", rest.trim_end_matches('.'));
+        }
+    }
+    if lower.contains("waiting for your input") || msg.is_empty() {
+        return "다음 지시를 기다립니다".into();
+    }
+    msg.to_string()
+}
+
+/// Ask the relay to push `n` to the subscribed phones. Off the caller's thread; failures are dropped.
+pub fn notify(hub: &Hub, n: Note) {
+    let target = hub.mobile.lock().unwrap().as_ref().and_then(|r| r.conf.relay.clone().map(|u| (u, r.conf.token.clone())));
+    let Some((relay, token)) = target else { return };
+    thread::spawn(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(15))).build().into();
+        let body = json!({ "title": n.title, "body": n.body, "tag": n.tag, "url": n.url, "urgent": n.urgent });
+        let _ = agent.post(format!("{}/push/notify", relay.trim_end_matches('/'))).header("x-mygdeck-token", &token).send_json(body);
+    });
 }
 
 /// Agent sessions only, with what the page needs. Shells stay on the PC.
@@ -584,6 +735,43 @@ mod tests {
         let a = agents(&list);
         assert_eq!(a.as_array().unwrap().len(), 1);
         assert_eq!(a[0]["has_turn"], true);
+    }
+
+    #[test]
+    fn push_notes_on_questions_and_finished_turns() {
+        let tool = json!({ "tool": "Bash", "detail": "npm test" });
+        let n = note("C:/w/app#agent|1", "C:/w/app", "working", "waiting", "Claude needs your permission to use Bash", &tool).unwrap();
+        assert_eq!(n.title, "app · 응답 필요");
+        assert_eq!(n.body, "허용 요청: Bash npm test");
+        assert!(n.urgent);
+        assert_eq!(n.url, "/#C%3A%2Fw%2Fapp%23agent%7C1");
+        assert_eq!(pct_decode(&n.url[2..]), "C:/w/app#agent|1");
+        let d = note("C:/w/app#agent|1", "C:/w/app", "working", "done", "완료", &Value::Null).unwrap();
+        assert!(!d.urgent && d.title == "app · 완료");
+        assert!(note("C:/w/app#agent|1", "C:/w/app", "waiting", "waiting", "", &Value::Null).is_none());
+        assert!(note("C:/w/app#agent|1", "C:/w/app", "starting", "done", "", &Value::Null).is_none());
+        assert!(note("C:/w/app#shell|1", "C:/w/app", "working", "waiting", "", &Value::Null).is_none());
+        assert_eq!(waiting_text("Claude is waiting for your input", &Value::Null), "다음 지시를 기다립니다");
+        assert_eq!(waiting_text("Claude needs your permission to use Edit.", &Value::Null), "Edit 사용 허용을 기다립니다");
+    }
+
+    #[test]
+    fn browses_only_under_the_roots() {
+        let base = std::env::temp_dir().join(format!("mygdeck-dirs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("app/.git")).unwrap();
+        std::fs::create_dir_all(base.join("notes")).unwrap();
+        std::fs::create_dir_all(base.join(".cache")).unwrap();
+        std::fs::create_dir_all(base.join("node_modules")).unwrap();
+        let roots = vec![base.clone()];
+        assert!(root_of(&base.join("app"), &roots).is_some());
+        assert!(root_of(&base.join("app/../.."), &roots).is_none());
+        assert!(root_of(&std::env::temp_dir(), &roots).is_none());
+        let names: Vec<String> = std::fs::read_dir(&base).unwrap().flatten().filter(|e| !hidden(e)).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert!(names.contains(&"app".to_string()) && names.contains(&"notes".to_string()) && names.len() == 2, "{names:?}");
+        assert_eq!(dir_row(&base.join("app"), "app".into())["project"], true);
+        assert_eq!(dir_row(&base.join("notes"), "notes".into())["project"], false);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     fn get(port: u16, path: &str, cookie: &str) -> String {

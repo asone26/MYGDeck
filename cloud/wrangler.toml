@@ -1,5 +1,5 @@
 # Phone dashboard relay: a Worker at https://mygdeck.<account>.workers.dev (docs/mobile.md).
-# Secrets (not here): DASH_PASSWORD, SESSION_SECRET, DASH_TOKEN via `wrangler secret put`.
+# Secrets (not here): DASH_PASSWORD, SESSION_SECRET, DASH_TOKEN, VAPID_KEY via `wrangler secret put`.
 name = "mygdeck"
 main = "worker.js"
 compatibility_date = "2026-11-01"
@@ -8,9 +8,9 @@ workers_dev = true
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/auth/*"]
+run_worker_first = ["/api/*", "/auth/*", "/push/*"]
 
-# Failed-login counts.
+# Failed-login counts and phone push subscriptions.
 [[kv_namespaces]]
 binding = "DECK"
 id = "c303b16ec6aa4055ad7f0b8648443737"

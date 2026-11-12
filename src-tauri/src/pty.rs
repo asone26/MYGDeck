@@ -53,6 +53,8 @@ impl Daemon {
                     Some("data") => "pty-data",
                     Some("exit") => "pty-exit",
                     Some("hook") => "agent-hook",
+                    // The phone dashboard asked the deck to add a project folder.
+                    Some("add-project") => "deck-add-project",
                     _ => continue,
                 };
                 let _ = app.emit(name, v);

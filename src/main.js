@@ -55,6 +55,7 @@ async function boot() {
   ]);
   Object.assign(app, { adapters, shell, source: loaded.source, live });
   await listen("agent-hook", (e) => app.cards.find((c) => c.agent.id === e.payload.id)?.onHook(e.payload.event, e.payload.data));
+  await listen("deck-add-project", (e) => typeof e.payload?.path === "string" && openProject(e.payload.path));
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
   refreshPool();
   $("add-btn").onclick = addProject;
@@ -152,7 +153,11 @@ function dragToSwap(card) {
 
 async function addProject() {
   const dir = await openDialog({ directory: true, title: "프로젝트 폴더 선택", defaultPath: "C:\\Project" }).catch(() => null);
-  if (typeof dir !== "string") return;
+  if (typeof dir === "string") openProject(dir);
+}
+
+/** Add a folder as a project, or show it if the deck already has it (the + button and the phone). */
+function openProject(dir) {
   const same = (p) => p.replace(/[\\/]+$/, "").toLowerCase() === dir.replace(/[\\/]+$/, "").toLowerCase();
   const existing = app.cards.findIndex((c) => same(c.root));
   if (existing >= 0) return setActive(existing);

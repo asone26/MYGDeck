@@ -12,6 +12,7 @@ const files = {
   "index.html": "src/mobile/index.html",
   "app.js": "src/mobile/app.js",
   "app.css": "src/mobile/app.css",
+  "sw.js": "src/mobile/sw.js",
   "manifest.webmanifest": "src/mobile/manifest.webmanifest",
   "logic.js": "src/logic.js",
   "xterm.js": "node_modules/@xterm/xterm/lib/xterm.js",

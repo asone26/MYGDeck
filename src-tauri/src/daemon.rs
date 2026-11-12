@@ -144,7 +144,7 @@ fn line(v: Value) -> String {
 }
 
 impl Hub {
-    fn broadcast(&self, msg: Value) {
+    pub(crate) fn broadcast(&self, msg: Value) {
         let s = line(msg);
         for (_, tx) in self.clients.lock().unwrap().iter() {
             let _ = tx.send(s.clone());
@@ -255,7 +255,9 @@ impl Hub {
 
     fn on_hook(&self, ev: crate::hooks::HookEvent) {
         let mut map = self.sessions.lock().unwrap();
+        let mut note = None;
         if let Some(x) = map.get_mut(&ev.id) {
+            let before = x.status.clone();
             x.hooked = true;
             if ev.data["transcript"].is_string() {
                 x.transcript = ev.data["transcript"].clone();
@@ -275,8 +277,14 @@ impl Hub {
                 "stop" => (x.status, x.text) = ("done".into(), "완료".into()),
                 _ => {}
             }
+            note = crate::mobile::note(&ev.id, &x.cwd, &before, &x.status, &x.text, &x.tool);
         }
         self.broadcast(json!({ "ev": "hook", "id": ev.id, "event": ev.event, "data": ev.data }));
+        drop(map);
+        // The phone hears about it too (a push through the relay), when the dashboard is on.
+        if let Some(n) = note {
+            crate::mobile::notify(self, n);
+        }
     }
 
     pub(crate) fn list(&self) -> Value {

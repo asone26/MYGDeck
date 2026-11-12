@@ -222,3 +222,90 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .login-box .primary { margin: 8px 0 0; min-height: 48px; border-radius: 10px; font-size: 16px; font-weight: 700; }
 .login-error { margin: 0; color: var(--bad); font-size: 14px; }
+
+/* ---- Review round 2: stale data, unread, sent states, answer view, CLI tools, add project, push ---- */
+.banner.bad { background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.banner b { font-weight: 700; }
+body.stale .projects, body.stale #d-body, body.stale .ask { opacity: 0.55; filter: saturate(0.4); }
+body.stale .pulse { animation: none !important; }
+
+.summary .fresh { color: var(--ok); }
+.proj[data-status="unread"] .st { color: var(--ok); }
+.proj[data-status="unread"] .line { color: var(--fg); }
+.proj[data-status="done"] .st { color: var(--muted); }
+.proj[data-status="idle"] .name, .proj[data-status="done"] .name { font-weight: 550; }
+
+.push-btn { color: var(--muted); margin-right: -8px; }
+.push-btn[aria-pressed="true"] { color: var(--fg); }
+.push-btn[aria-pressed="true"] .slash { display: none; }
+.push-btn:disabled { opacity: 0.5; }
+
+.ask-choices button.sent { border-color: var(--ok); opacity: 1; }
+.ask-choices button.sent .n { color: var(--ok); font-weight: 700; }
+
+.more-btn {
+  min-height: 36px; margin-top: 4px; padding: 0 2px;
+  font-size: 13px; font-weight: 600; color: var(--work);
+}
+.steps li:has(> .more-btn) { padding: 0; }
+
+.answer ol { margin: 0 0 10px; padding-left: 24px; }
+.answer li { margin: 2px 0; }
+.answer li > ul, .answer li > ol { margin: 4px 0; }
+.answer a { color: var(--work); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.answer .tbl { margin: 0 0 10px; overflow-x: auto; border: 1px solid var(--line-2); border-radius: 8px; }
+.answer table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.answer th, .answer td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; word-break: keep-all; }
+.answer th { background: var(--raised); font-weight: 700; white-space: nowrap; }
+.answer tr:last-child td { border-bottom: 0; }
+
+.tabs { align-items: center; justify-content: space-between; }
+.tablist { display: flex; gap: 4px; }
+.cli-tools { display: flex; gap: 2px; }
+.cli-tools button {
+  min-width: 40px; min-height: 40px; padding: 0 8px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+}
+.cli-tools button[aria-pressed="true"] { background: var(--raised); color: var(--fg); }
+.cli-tools button:disabled { opacity: 0.35; }
+.cli.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* List footer: the add button sits where the thumb is. */
+.projects { padding-bottom: 8px; }
+.list-foot {
+  flex: none; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+.wide { width: 100%; margin-left: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.list-foot .ghost { min-height: 48px; border-radius: 10px; font-size: 15px; font-weight: 650; color: var(--fg); }
+.list-foot .ghost:active { background: var(--raised); }
+
+/* Add project */
+.d-title.plain { border-left: 0; padding-left: 4px; }
+.d-status.path { font-family: var(--mono); font-size: 12px; white-space: normal; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.add-search { flex: none; padding: 10px 16px 2px; }
+.add-search input {
+  width: 100%; min-height: 44px; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--fg); font: inherit; font-size: 16px;
+}
+.dirs { list-style: none; margin: 0; padding: 4px 0 8px; overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+.dirs .note { padding: 24px 16px; }
+.dir { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.dir-open {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+  min-height: 56px; padding: 8px 8px 8px 16px; text-align: left;
+}
+.dir-open:active { background: var(--raised); }
+.dir .ic { width: 16px; flex: none; color: var(--muted); font-size: 18px; text-align: center; }
+.dir .main { min-width: 0; display: flex; flex-direction: column; }
+.dir .name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir .line { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir.up .name { color: var(--muted); font-weight: 500; }
+.dir-start {
+  flex: none; min-height: 40px; min-width: 64px; margin-right: 12px; padding: 0 14px;
+  border-radius: 10px; border: 1px solid var(--line-2); font-size: 14px; font-weight: 650;
+}
+.dir-start:active { background: var(--raised); }
+.dir-start:disabled { opacity: 0.4; }
+.add-foot .primary { min-height: 48px; border-radius: 10px; font-size: 16px; font-weight: 700; }
+body.stale .summary, body.stale .d-status { opacity: 0.55; }

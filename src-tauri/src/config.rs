@@ -68,6 +68,11 @@ pub fn load_config() -> Loaded {
     Loaded { config, source: source.to_string_lossy().into_owned() }
 }
 
+/** Folders of the saved deck (the phone dashboard offers their parents as places to add projects). */
+pub fn saved_paths() -> Vec<String> {
+    read(&source_path()).map(|c| c.projects.into_iter().map(|p| expand(&p.path)).collect()).unwrap_or_default()
+}
+
 #[tauri::command]
 pub fn save_config(source: String, projects: Vec<Project>) -> Result<(), String> {
     let path = PathBuf::from(&source);
