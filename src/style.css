@@ -313,7 +313,8 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
   .card .composer .stop { padding: 0 12px; }
   .composer .stop .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
-@container card (max-width: 400px) { .agent { max-width: 11ch; text-overflow: ellipsis; } }
+/* the cap counts padding and the arrow too: leave room for a whole "claude-code", cut only longer names */
+@container card (max-width: 400px) { .agent { max-width: calc(12ch + 40px); text-overflow: ellipsis; } }
 .head .ctx { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .head .diff { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .s-replies { background: transparent; }

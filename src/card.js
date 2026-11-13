@@ -8,7 +8,7 @@ import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
-import { MENU, keyLabel, ROTATE_AT, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
+import { MENU, keyLabel, ROTATE_AT, contextLimit, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { elapsed, renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
@@ -140,6 +140,7 @@ export class Card {
       if (turn) {
         this.turn = turn;
         this.contextTokens = turn.context_tokens ?? null;
+        this.contextModel = turn.model || this.contextModel;
         if (turn.prompt && !turn.prompt.includes("[mygdeck]")) this.lastAsk = this.turnAsk = turn.prompt.replace(/\s+/g, " ").trim();
         this.updateView();
       }
@@ -215,7 +216,7 @@ export class Card {
     const wasFocused = box.contains(document.activeElement);
     box.hidden = !show;
     this.agent?.setCovered(show);
-    const limit = this.adapter?.context_limit;
+    const limit = contextLimit(this.adapter, this.contextModel);
     this.$(".ctx").textContent = limit && this.contextTokens ? `${Math.round((this.contextTokens / limit) * 100)}%` : "";
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
@@ -423,6 +424,7 @@ export class Card {
       if (!turn || seq !== this.turnSeq || !["working", "waiting"].includes(this.status)) return;
       this.live = turn;
       this.contextTokens = turn.context_tokens ?? this.contextTokens;
+      this.contextModel = turn.model || this.contextModel;
       this.updateView();
     }, 400);
   }
@@ -438,6 +440,7 @@ export class Card {
       // The deck's own handoff/seed prompts are not the user's request.
       if (turn?.prompt && !turn.prompt.includes("[mygdeck]")) this.lastAsk = turn.prompt;
       this.contextTokens = turn?.context_tokens ?? null;
+      this.contextModel = turn?.model || this.contextModel;
       this.updateView();
     }
     this.afterTurn();
@@ -463,7 +466,7 @@ export class Card {
       this.rotating = null;
       this.updateView();
     } else {
-      const limit = this.adapter?.context_limit;
+      const limit = contextLimit(this.adapter, this.contextModel);
       if (limit && this.contextTokens >= limit * ROTATE_AT) this.rotate(this.adapter, `컨텍스트가 ${Math.round((this.contextTokens / limit) * 100)}% 찼습니다.`);
     }
     // A forwarded note takes this turn; the queue goes on when that one ends.
@@ -505,11 +508,13 @@ export class Card {
     const next = this.nextAdapter ?? this.adapter;
     this.nextAdapter = null;
     this.rotating = seed ? "seed" : null;
-    this.transcript = this.contextTokens = null;
+    this.transcript = this.contextTokens = this.contextModel = null;
     const t = this.agent.term;
-    // Seam below everything, then scroll the whole old screen into scrollback: on Windows the CLI's clear arrives
-    // as ConPTY repaints at absolute rows, which would overwrite whatever is still on screen.
-    t.write("\x1b[999;1H\r\n\x1b[90m── 세션 이어짐 ──\x1b[0m" + "\r\n".repeat(t.rows - 1));
+    // Inline CLIs: seam below everything, then scroll the whole old screen into scrollback: on Windows the CLI's clear
+    // arrives as ConPTY repaints at absolute rows, which would overwrite whatever is still on screen.
+    // Full-screen CLIs (alternate buffer, e.g. Claude Code 2.1): no scrollback to keep, and they repaint only the rows
+    // they changed, so writing here would leave a blanked, half-drawn screen.
+    if (t.buffer.active.type === "normal") t.write("\x1b[999;1H\r\n\x1b[90m── 세션 이어짐 ──\x1b[0m" + "\r\n".repeat(t.rows - 1));
     this.agent.keepScrollback = true;
     if (next === this.adapter && next?.clear_cmd && this.agent.alive) {
       this.sendToAgent(next.clear_cmd);

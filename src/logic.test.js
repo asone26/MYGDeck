@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine, parseDiff, addedRows } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine, parseDiff, addedRows, contextLimit } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -241,4 +241,13 @@ test("diff rows carry old and new line numbers", () => {
   assert.deepEqual(parseDiff("diff --git a/i b/i\nBinary files a/i and b/i differ\n"), [{ kind: "meta", text: "바이너리 파일이 바뀌었습니다" }]);
   assert.deepEqual(parseDiff(""), []);
   assert.deepEqual(addedRows("x\r\ny\n"), [{ kind: "hunk", text: "새 파일" }, { kind: "add", new: 1, text: "x" }, { kind: "add", new: 2, text: "y" }]);
+});
+
+test("context window follows the transcript's model", () => {
+  const a = { context_limit: 200000, context_limits: { opus: 1000000, sonnet: 1000000 } };
+  assert.equal(contextLimit(a, "claude-opus-5-5"), 1000000);
+  assert.equal(contextLimit(a, "claude-haiku-5-5"), 200000);
+  assert.equal(contextLimit(a, null), 200000); // no turn read yet
+  assert.equal(contextLimit({ context_limit: 0 }, "claude-opus-5-5"), 0);
+  assert.equal(contextLimit(null, "x"), undefined);
 });

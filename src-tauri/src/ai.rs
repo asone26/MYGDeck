@@ -150,6 +150,77 @@ fn chat(conn: &Connection, key: Option<&str>, prompt: &str) -> Result<String, (D
     text.and_then(Value::as_str).map(str::to_string).ok_or((Duration::from_secs(30), "빈 응답".into()))
 }
 
+/// The Claude subscription CLI as the last question connection (spec 4.5: existing subscriptions count as free).
+/// Needs no setup: if `claude` is on PATH, questions work.
+fn subscription_cli() -> Option<std::path::PathBuf> {
+    crate::pty::find_program("claude")
+}
+
+/// One-shot `claude -p` on the cheapest model: no tools, MCP, settings or hooks, and no saved session,
+/// run from the temp dir so it never shows up in a project's `--continue`.
+fn ask_cli(exe: &std::path::Path, prompt: &str) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    let is_script = exe.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    let mut c = if is_script {
+        let mut c = Command::new("cmd.exe");
+        c.args(["/d", "/c", "claude"]);
+        c
+    } else {
+        Command::new(exe)
+    };
+    c.args(["-p", "--model", "haiku", "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--setting-sources", ""])
+        .args(["--disable-slash-commands", "--append-system-prompt", SYSTEM])
+        .current_dir(std::env::temp_dir())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for v in crate::pty::INHERITED_SESSION_VARS {
+        c.env_remove(v);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = c.spawn().map_err(|e| format!("실행 실패: {e}"))?;
+    // The prompt goes through stdin: no quoting problems through cmd.exe, no length limit.
+    child.stdin.take().map(|mut s| s.write_all(prompt.as_bytes()));
+    let mut out = child.stdout.take().ok_or("출력 없음")?;
+    let reader = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = out.read_to_string(&mut s);
+        s
+    });
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let status = loop {
+        if let Some(s) = child.try_wait().map_err(|e| e.to_string())? {
+            break s;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            return Err("응답 시간 초과".into());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let text = reader.join().unwrap_or_default().trim().to_string();
+    if !status.success() || text.is_empty() {
+        let mut err = String::new();
+        if let Some(mut e) = child.stderr.take() {
+            let _ = e.read_to_string(&mut err);
+        }
+        let why = err.lines().chain(text.lines()).find(|l| !l.trim().is_empty()).unwrap_or("빈 응답").trim();
+        return Err(why.chars().take(200).collect());
+    }
+    Ok(text)
+}
+
+/// The question paths can answer: a free connection with a model, or the subscription CLI.
+#[tauri::command]
+pub fn ai_ready() -> bool {
+    conns(&read()).iter().any(is_chat_pool) || subscription_cli().is_some()
+}
+
 #[derive(Serialize)]
 pub struct Source {
     title: String,
@@ -210,7 +281,8 @@ pub async fn ai_ask(prompt: String, search: bool) -> Result<Answer, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let all = conns(&read());
         let pool: Vec<_> = all.iter().filter(|c| is_chat_pool(c)).collect();
-        if pool.is_empty() {
+        let cli = subscription_cli();
+        if pool.is_empty() && cli.is_none() {
             return Err("모델이 지정된 무료 연결이 없습니다. 🔑에서 추가하세요.".to_string());
         }
         // Web findings first, when asked and a search connection with a key is ready; a failure only means "answered without search".
@@ -246,6 +318,16 @@ pub async fn ai_ask(prompt: String, search: bool) -> Result<Answer, String> {
                     cool(&c.id, d);
                     last = format!("{}: {why}", c.name);
                 }
+            }
+        }
+        // Free API connections first; the subscription last, since it shares the coding agent's quota.
+        if let Some(exe) = cli {
+            match ask_cli(&exe, &asked) {
+                Ok(text) => {
+                    let searched = !hits.is_empty();
+                    return Ok(Answer { text, via: "Claude 구독 (haiku)".into(), sources: sources(hits), searched });
+                }
+                Err(why) => last = format!("Claude 구독: {why}"),
             }
         }
         match soonest {
@@ -291,6 +373,15 @@ fn test(id: String) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Real call on the subscription (spends a little quota): `cargo test -- --ignored subscription`.
+    #[test]
+    #[ignore]
+    fn subscription_cli_answers() {
+        let exe = subscription_cli().expect("claude on PATH");
+        let a = ask_cli(&exe, "1+1은? 숫자만").unwrap();
+        assert!(a.contains('2'), "{a}");
+    }
 
     #[test]
     fn findings_are_numbered_into_the_prompt() {

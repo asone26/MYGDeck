@@ -4,7 +4,7 @@ let pool = false;
 /** True when at least one free connection has a model: the question paths can answer. */
 export const poolReady = () => pool;
 export async function refreshPool() {
-  pool = (await invoke("ai_list").catch(() => [])).some((c) => c.pooled);
+  pool = await invoke("ai_ready").catch(() => false);
 }
 
 /** Presets fill the form; the key is the only thing the user has to type (spec 4.5). */
@@ -38,10 +38,10 @@ export async function openConnections(overlay) {
 
   async function draw() {
     const list = await invoke("ai_list");
-    pool = list.some((c) => c.pooled);
+    await refreshPool();
     const ul = $(".cn-list");
     ul.textContent = "";
-    if (!list.length) ul.innerHTML = `<li class="muted">아직 연결이 없습니다. 아래에서 추가하세요.</li>`;
+    if (!list.length) ul.innerHTML = `<li class="muted">${pool ? "연결이 없어 질문은 Claude 구독(haiku)으로 답합니다. 무료 API를 추가하면 그쪽을 먼저 씁니다." : "아직 연결이 없습니다. 아래에서 추가하세요."}</li>`;
     for (const c of list) {
       const li = document.createElement("li");
       li.innerHTML = `<b></b> <span class="muted"></span><span class="sp"></span><button class="t">테스트</button><button class="e">수정</button><button class="d">삭제</button><span class="res"></span>`;

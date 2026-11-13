@@ -279,6 +279,12 @@ export function basename(p) {
 /** Share of the context window at which the deck rotates, before the agent's own auto-compact. */
 export const ROTATE_AT = 0.7;
 
+/** Context window for the model the transcript last used: the first `context_limits` key in its name, else `context_limit`. */
+export function contextLimit(adapter, model) {
+  const hit = model && Object.entries(adapter?.context_limits ?? {}).find(([k]) => model.includes(k));
+  return hit ? hit[1] : adapter?.context_limit;
+}
+
 /** Turn-end instruction before a new session: write down what the next session needs. */
 export function handoffPrompt(why) {
   return `[mygdeck] ${why} 새 세션으로 이어가기 전에 .mygdeck/progress.md 를 갱신하세요: 지금까지 한 일, 다음 할 일(- [ ] 체크박스), 중요한 결정 사항. 짧게 쓰고 다른 작업은 하지 마세요.`;

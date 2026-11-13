@@ -11,6 +11,8 @@ effort_cmd = "/effort {effort}"
 efforts = ["low", "medium", "high", "xhigh", "max"]
 clear_cmd = "/clear"
 context_limit = 200000
+# Models with a 1M window (seen in transcripts past 200k); the rest use context_limit.
+context_limits = { opus = 1000000, sonnet = 1000000, fable = 1000000 }
 status = "hooks"
 commands = [
   "/help", "/clear", "/compact", "/context", "/cost", "/model", "/effort", "/review", "/init",

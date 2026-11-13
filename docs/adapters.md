@@ -28,6 +28,7 @@ launch = "opencode"
 | `deep_model` / `base_model` | `""` | 설계·디버깅 질문에 잠깐 바꿀 모델과 돌아올 모델 |
 | `clear_cmd` | `""` | 새 대화 명령 |
 | `context_limit` | `0` | 컨텍스트 창 크기(토큰). `status = "hooks"`일 때만 쓰이고, 70%에 이르면 `clear_cmd`로 세션을 넘긴다. 0이면 넘기지 않는다 |
+| `context_limits` | `{}` | 모델별 창 크기. 대화 기록의 모델명(예: `claude-opus-5-5`)에 들어 있는 첫 키의 값이 `context_limit`보다 우선한다. 예: `{ opus = 1000000 }` |
 | `interrupt` | Esc | 작업 중지 키(`Ctrl+Q`) |
 | `commands` | `[]` | 입력창에서 `/`를 쳤을 때 보여 줄 슬래시 명령 |
 | `status` | `"idle"` | `"hooks"`면 hooks 이벤트로 상태를 받고 GUI 화면을 쓴다 |

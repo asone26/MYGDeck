@@ -34,6 +34,8 @@ pub struct Turn {
     pub todos: Vec<Todo>,
     /// Tokens the model saw on its last call: input + cache read + cache creation.
     pub context_tokens: u64,
+    /// Model of the last call (e.g. "claude-opus-5-5"): picks the context window (adapter `context_limits`).
+    pub model: String,
 }
 
 #[tauri::command]
@@ -105,7 +107,7 @@ pub fn parse_turn(jsonl: &str) -> Turn {
                     let prompt = content_text(content);
                     // Task notices and subagent reports arrive as user rows: the agent keeps answering the same request.
                     if !prompt.trim().is_empty() && !is_notice(&row, &prompt) {
-                        turn = Turn { prompt, context_tokens: turn.context_tokens, ..Default::default() };
+                        turn = Turn { prompt, context_tokens: turn.context_tokens, model: std::mem::take(&mut turn.model), ..Default::default() };
                     }
                 }
                 for r in results {
@@ -121,6 +123,10 @@ pub fn parse_turn(jsonl: &str) -> Turn {
                 if let Some(u) = row.pointer("/message/usage") {
                     let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
                     turn.context_tokens = n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens");
+                }
+                // "<synthetic>" rows are the CLI's own notices, not a model call.
+                if let Some(m) = row.pointer("/message/model").and_then(Value::as_str).filter(|m| !m.starts_with('<')) {
+                    turn.model = m.into();
                 }
                 for item in content.as_array().into_iter().flatten() {
                     match item.get("type").and_then(Value::as_str) {
@@ -160,7 +166,7 @@ mod tests {
             r#"{"type":"user","message":{"content":"first task"}}"#,
             r#"{"type":"assistant","message":{"content":[{"type":"text","text":"old answer"}]}}"#,
             r#"{"type":"user","message":{"content":"run the tests"}}"#,
-            r#"{"type":"assistant","message":{"usage":{"input_tokens":2,"cache_read_input_tokens":40000,"cache_creation_input_tokens":300},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test","description":"run"}}]}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":2,"cache_read_input_tokens":40000,"cache_creation_input_tokens":300},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test","description":"run"}}]}}"#,
             r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 1\n2 tests failed"}]}}"#,
             r#"{"type":"user","isMeta":true,"message":{"content":"<system notice>"}}"#,
             r#"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"subagent chatter"}]}}"#,
@@ -176,6 +182,7 @@ mod tests {
         assert_eq!(t.tools[0].at, 0);
         assert_eq!(t.tools[0].error.as_deref(), Some("Exit code 1\n2 tests failed"));
         assert_eq!(t.context_tokens, 40302);
+        assert_eq!(t.model, "claude-opus-5-5");
     }
 
     #[test]

@@ -73,6 +73,7 @@ pub fn run() {
             config::save_config,
             adapters::list_adapters,
             ai::ai_list,
+            ai::ai_ready,
             ai::ai_save,
             ai::ai_delete,
             ai::ai_test,
