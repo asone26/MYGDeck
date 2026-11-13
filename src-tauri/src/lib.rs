@@ -93,6 +93,8 @@ pub fn run() {
             fsx::read_spec,
             fsx::git_save,
             fsx::git_diff,
+            fsx::file_diff,
+            fsx::git_discard,
             fsx::git_push,
             fsx::git_ahead,
             fsx::git_shortstat,

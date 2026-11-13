@@ -135,6 +135,7 @@ export class Explorer {
     this.el.querySelector(".x-push").classList.toggle("on", ahead > 0);
     this.el.querySelector(".x-push").title = `커밋을 원격 저장소로 올립니다 (git push)${ahead ? ` · 올릴 커밋 ${ahead}개` : ""}`;
     this.card.setFileCount(st.length);
+    this.card.viewer.syncReview();
     if (this.mode === "changed") this.render();
     else this.recolor();
   }
@@ -165,7 +166,7 @@ export class Explorer {
   async onClick(e) {
     const n = e.target.closest("[data-path]");
     if (!n) return;
-    if (!n.dataset.dir) return this.card.viewer.open(n.dataset.path);
+    if (!n.dataset.dir) return this.card.viewer.open(n.dataset.path, n.dataset.code ? "diff" : "code");
     const kids = n.nextElementSibling?.classList.contains("kids") ? n.nextElementSibling : null;
     n.classList.toggle("open", !kids);
     if (kids) return kids.remove();

@@ -53,7 +53,7 @@ hook_args = "-c \"notify=['{hook_exe}','--hook','stop']\""
 
 | 어댑터 | 실행 | 상태 보고 | `resume_args` |
 |---|---|---|---|
-| claude-code | 확인 | hooks, 확인 | `--continue`, 덱의 재부팅 복원 경로는 미확인 |
+| claude-code | 확인 | hooks, 확인 | `--continue`, 확인 (데몬이 없는 상태에서 이전 대화 복원, 대화가 없으면 새로 시작) |
 | codex | 미확인 | `notify`, 이 PC에 codex가 없어 실제 실행은 미확인 | `resume --last`, 미확인 |
 | gemini | 미확인 | 출력 멈춤 추정, `waiting` 문구 미확인 | `--resume latest`, 미확인 |
 | antigravity (`agy`) | 미확인 (1.5.6 설치·로그인 확인) | 출력 멈춤 추정 | `--continue`, 플래그만 확인 |

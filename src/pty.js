@@ -6,7 +6,26 @@ import { ghostSuggestion, isDeckKey } from "./logic.js";
 
 // keep in sync with --panel / --fg in style.css
 // background matches --screen in style.css so the terminal sits flush in the card
-const THEME = { background: "#0a0b10", foreground: "#e3e6eb", cursor: "#7ab4ff", cursorAccent: "#0a0b10", selectionBackground: "#2b3a55" };
+const DARK = { background: "#0a0b10", foreground: "#e3e6eb", cursor: "#7ab4ff", cursorAccent: "#0a0b10", selectionBackground: "#2b3a55" };
+// Light (warm paper, no pure white): ANSI colors deepened for a light screen; "white" maps to gray ink so CLIs that assume a dark
+// terminal stay readable.
+const LIGHT = {
+  background: "#f3f0e9", foreground: "#2b2a26", cursor: "#36598f", cursorAccent: "#f3f0e9", selectionBackground: "#d9d2c2",
+  black: "#2b2a26", red: "#c8343a", green: "#0a7a51", yellow: "#9a5a00", blue: "#2c66d1", magenta: "#8a3fb0", cyan: "#0b7285", white: "#5f5a51",
+  brightBlack: "#6d685e", brightRed: "#b3262c", brightGreen: "#08693f", brightYellow: "#874e00", brightBlue: "#1f55b8", brightMagenta: "#7a2fa0", brightCyan: "#09606f", brightWhite: "#2b2a26",
+};
+let THEME = DARK;
+let CONTRAST = 1;
+
+/** Recolor every terminal for the deck theme (main.js applies the theme). */
+export function setTermTheme(light) {
+  THEME = light ? LIGHT : DARK;
+  // CLIs paint some text in fixed RGB picked for dark terminals: let xterm lift it to 4.5:1 on white.
+  CONTRAST = light ? 4.5 : 1;
+  for (const t of terms) Object.assign(t.options, { theme: THEME, minimumContrastRatio: CONTRAST });
+}
+/** Every open terminal, live or exited, so a theme change reaches them all. */
+const terms = new Set();
 let seq = 0;
 
 /** Live sessions by PTY id, so backend events can find their terminal. */
@@ -25,8 +44,10 @@ export class Pty {
       cursorBlink: true,
       scrollback,
       theme: THEME,
+      minimumContrastRatio: CONTRAST,
       allowProposedApi: true,
     });
+    terms.add(this.term);
     this.fit = new FitAddon();
     this.term.loadAddon(this.fit);
     this.term.open(host);
@@ -191,6 +212,7 @@ export class Pty {
 
   dispose() {
     this.kill();
+    terms.delete(this.term);
     this.term.dispose();
   }
 }

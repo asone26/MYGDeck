@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine, parseDiff, addedRows } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -224,4 +224,21 @@ test("suggestsClear spots a recommendation to start over", async () => {
   assert.equal(suggestsClear(["src/clear.js와 a/clear 경로를 고쳤습니다."]), false);
   assert.equal(suggestsClear(["테스트를 고쳤습니다."]), false);
   assert.equal(suggestsClear([]), false);
+});
+
+test("diff rows carry old and new line numbers", () => {
+  const d = "diff --git a/x b/x\nindex 1..2 100644\n--- a/x\n+++ b/x\n@@ -3,3 +3,3 @@ fn main\r\n a\r\n-b\r\n+B\r\n c\r\n\\ No newline at end of file\n@@ -20 +20,2 @@\n z\n+-- dash\n";
+  assert.deepEqual(parseDiff(d), [
+    { kind: "hunk", text: "fn main" },
+    { kind: "ctx", old: 3, new: 3, text: "a" },
+    { kind: "del", old: 4, text: "b" },
+    { kind: "add", new: 4, text: "B" },
+    { kind: "ctx", old: 5, new: 5, text: "c" },
+    { kind: "hunk", text: "" },
+    { kind: "ctx", old: 20, new: 20, text: "z" },
+    { kind: "add", new: 21, text: "-- dash" },
+  ]);
+  assert.deepEqual(parseDiff("diff --git a/i b/i\nBinary files a/i and b/i differ\n"), [{ kind: "meta", text: "바이너리 파일이 바뀌었습니다" }]);
+  assert.deepEqual(parseDiff(""), []);
+  assert.deepEqual(addedRows("x\r\ny\n"), [{ kind: "hunk", text: "새 파일" }, { kind: "add", new: 1, text: "x" }, { kind: "add", new: 2, text: "y" }]);
 });

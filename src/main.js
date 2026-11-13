@@ -9,7 +9,7 @@ import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Card } from "./card.js";
 import { openConnections, refreshPool } from "./connections.js";
-import { ptys } from "./pty.js";
+import { ptys, setTermTheme } from "./pty.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
 import { DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
@@ -128,7 +128,42 @@ function reflowLights() {
 }
 window.addEventListener("resize", reflowLights);
 
+// Theme: dark (default), light, or follow the OS. A per-machine preference, kept in the window's storage.
+const THEMES = { dark: ["다크", ICONS.Moon], light: ["밝게", ICONS.Sun], system: ["시스템 설정 따라가기", ICONS.SunMoon] };
+const osLight = matchMedia("(prefers-color-scheme: light)");
+let themePref = (() => {
+  try {
+    return THEMES[localStorage.getItem("mygdeck.theme")] ? localStorage.getItem("mygdeck.theme") : "dark";
+  } catch {
+    return "dark";
+  }
+})();
+
+function applyTheme() {
+  const light = themePref === "light" || (themePref === "system" && osLight.matches);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  setTermTheme(light);
+  const btn = $("theme-btn");
+  if (!btn) return;
+  const order = Object.keys(THEMES);
+  const next = order[(order.indexOf(themePref) + 1) % order.length];
+  btn.innerHTML = icon(THEMES[themePref][1]);
+  btn.title = `테마: ${THEMES[themePref][0]} · 누르면 ${THEMES[next][0]}`;
+}
+applyTheme();
+osLight.addEventListener("change", () => themePref === "system" && applyTheme());
+
+function cycleTheme() {
+  const order = Object.keys(THEMES);
+  themePref = order[(order.indexOf(themePref) + 1) % order.length];
+  try {
+    localStorage.setItem("mygdeck.theme", themePref);
+  } catch {}
+  applyTheme();
+}
+
 async function boot() {
+  $("theme-btn").onclick = cycleTheme;
   const addBtn = document.getElementById("add-btn");
   addBtn.title = keyLabel(addBtn.title);
   addBtn.innerHTML = icon(ICONS.Plus);

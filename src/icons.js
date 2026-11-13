@@ -1,8 +1,8 @@
 // Lucide icons (https://github.com/lucide-icons/lucide, ISC) as inline SVG strings for innerHTML templates.
 // Named imports keep the bundle to the icons used here.
-import { ArrowUp, CircleCheck, CircleX, FileText, FolderTree, Hand, KeyRound, LayoutList, Loader, LoaderCircle, PanelBottom, Plus, Power, RotateCw, Square, SquareTerminal, X } from "lucide";
+import { ArrowUp, CircleCheck, CircleX, FileText, FolderTree, Hand, KeyRound, LayoutList, Loader, LoaderCircle, Moon, PanelBottom, Plus, Power, RotateCw, Square, SquareTerminal, Sun, SunMoon, X } from "lucide";
 
-export const ICONS = { ArrowUp, CircleCheck, CircleX, FileText, FolderTree, Hand, KeyRound, LayoutList, Loader, LoaderCircle, PanelBottom, Plus, Power, RotateCw, Square, SquareTerminal, X };
+export const ICONS = { ArrowUp, CircleCheck, CircleX, FileText, FolderTree, Hand, KeyRound, LayoutList, Loader, LoaderCircle, Moon, PanelBottom, Plus, Power, RotateCw, Square, SquareTerminal, Sun, SunMoon, X };
 
 // Card status → icon for the card header badge and overview tiles (idle shows nothing).
 const STATUS = { starting: LoaderCircle, working: Loader, waiting: Hand, done: CircleCheck, failed: CircleX, exited: Power };

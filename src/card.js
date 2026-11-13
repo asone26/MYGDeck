@@ -14,7 +14,7 @@ import { elapsed, renderSummary, summaryLines } from "./summary.js";
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 변경 파일 보기" hidden></button><span class="ctx" title="컨텍스트 사용량"></span>
+  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><span class="ctx" title="컨텍스트 사용량"></span>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
   <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
@@ -122,7 +122,16 @@ export class Card {
   async reattached(s) {
     if (s.transcript) this.transcript = s.transcript;
     if (s.tool?.tool) this.lastTool = s.tool;
-    const status = ["working", "waiting", "done"].includes(s.status) ? s.status : "idle";
+    // A hooks agent that never sent a hook has not started a turn: recent output (a repaint) is not work.
+    const unhooked = this.hooks && !s.hooked;
+    const status = !unhooked && ["working", "waiting", "done"].includes(s.status) ? s.status : "idle";
+    // Launched to reopen the last conversation by a window that closed before the CLI answered: the CLI
+    // may only now find there is none and quit, so the fresh-start fallback in onExit still applies.
+    const resumeArgs = this.adapter?.resume_args;
+    if (resumeArgs && !s.transcript && s.command?.trimEnd().endsWith(resumeArgs)) {
+      this.resuming = true;
+      this.startedAt = Date.now();
+    }
     this.setStatus(status, (status === "working" || status === "waiting") && s.text ? s.text : "다시 연결됨");
     if (status === "working") this.turnStart = null;
     if (status === "working" || status === "waiting") this.peekTurn();
@@ -255,7 +264,7 @@ export class Card {
     if (!b.hidden) b.textContent = `+${d.added} −${d.removed}`;
   }
 
-  /** Open the file panel on the changed files. */
+  /** Open the file panel on the changed files, and the first one in the review view. */
   showChanges() {
     if (this.density !== "full") {
       this.setDensity("full");
@@ -263,6 +272,8 @@ export class Card {
     }
     this.$(".m-files").open = true;
     this.explorer.setMode("changed");
+    const first = [...this.explorer.status.keys()].sort()[0];
+    if (first) this.viewer.open(first, "diff");
   }
 
   /** Ctrl+I: code selected in the viewer as `@file Lx-y`, else text selected in a terminal (A5). */

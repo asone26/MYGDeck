@@ -400,3 +400,33 @@ export function timeline(turn, pending) {
   if (pending && pending !== last) push({ text: pending, error: null, full: null });
   return out;
 }
+
+/** Unified diff of one file → rows for the review view: hunk headers, then lines with old/new numbers. */
+export function parseDiff(text) {
+  const rows = [];
+  let o = 0;
+  let n = 0;
+  let inHunk = false;
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)/.exec(line);
+    if (h) {
+      [o, n, inHunk] = [+h[1], +h[2], true];
+      rows.push({ kind: "hunk", text: h[3] });
+    } else if (line.startsWith("diff --git")) {
+      inHunk = false;
+    } else if (!inHunk) {
+      if (line.startsWith("Binary files")) rows.push({ kind: "meta", text: "바이너리 파일이 바뀌었습니다" });
+    } else if (line[0] === "+") rows.push({ kind: "add", new: n++, text: line.slice(1) });
+    else if (line[0] === "-") rows.push({ kind: "del", old: o++, text: line.slice(1) });
+    else if (line[0] === " ") rows.push({ kind: "ctx", old: o++, new: n++, text: line.slice(1) });
+  }
+  return rows;
+}
+
+/** A file git doesn't know yet, shown as one all-added hunk. */
+export function addedRows(text) {
+  const lines = String(text).replace(/\r/g, "").split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return [{ kind: "hunk", text: "새 파일" }, ...lines.map((t, i) => ({ kind: "add", new: i + 1, text: t }))];
+}

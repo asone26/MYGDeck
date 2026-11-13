@@ -181,6 +181,48 @@ pub fn git_diff(root: String) -> String {
     run_git(&root, &["diff", "HEAD"]).unwrap_or_default()
 }
 
+/// True when the last commit has `rel` as a file (false before the first commit).
+fn in_head(root: &str, rel: &str) -> bool {
+    git(root, &["--literal-pathspecs", "cat-file", "-t", &format!("HEAD:{rel}")]).is_some_and(|t| t.trim() == "blob")
+}
+
+#[derive(Serialize)]
+pub struct FileDiff {
+    diff: String,
+    /// Not known to git yet: there is no diff, the whole file is new.
+    untracked: bool,
+}
+
+/// One file's changes against the last commit, for the review view in the code viewer.
+#[tauri::command]
+pub fn file_diff(root: String, rel: String) -> Result<FileDiff, String> {
+    let path = safe_join(&root, &rel)?;
+    let diff = git(&root, &["--literal-pathspecs", "diff", "HEAD", "--", &rel])
+        .or_else(|| git(&root, &["--literal-pathspecs", "diff", "--", &rel]))
+        .unwrap_or_default();
+    let untracked = diff.is_empty()
+        && path.is_file()
+        && git(&root, &["--literal-pathspecs", "ls-files", "--", &rel]).is_some_and(|s| s.trim().is_empty());
+    Ok(FileDiff { diff, untracked })
+}
+
+/// "되돌리기": put one file back to the last commit. A file the last commit doesn't have is deleted.
+#[tauri::command]
+pub fn git_discard(root: String, rel: String) -> Result<(), String> {
+    let path = safe_join(&root, &rel)?;
+    if rel.trim_matches(|c| c == '/' || c == '.').is_empty() || path.is_dir() {
+        return Err("not a file".into());
+    }
+    if in_head(&root, &rel) {
+        return run_git(&root, &["--literal-pathspecs", "restore", "--source=HEAD", "--staged", "--worktree", "--", &rel]).map(|_| ());
+    }
+    let _ = git(&root, &["--literal-pathspecs", "rm", "--cached", "-q", "--ignore-unmatch", "--", &rel]);
+    if path.is_file() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// "커밋": commit every change (untracked files too).
 #[tauri::command]
 pub fn git_save(root: String, message: String) -> Result<String, String> {
@@ -443,6 +485,43 @@ mod tests {
         git_push(root.clone()).unwrap();
         assert!(g(&["log", "-1", "--format=%s", "@{u}"]).contains("first"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn file_diff_and_discard() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-discard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        g(&["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(dir.join("gone.txt"), "x\n").unwrap();
+        git_save(root.clone(), "first".into()).unwrap();
+
+        std::fs::write(dir.join("a.txt"), "one\nTWO\n").unwrap();
+        std::fs::remove_file(dir.join("gone.txt")).unwrap();
+        std::fs::write(dir.join("sub/new [1].txt"), "fresh\n").unwrap();
+        let d = file_diff(root.clone(), "a.txt".into()).unwrap();
+        assert!(d.diff.contains("-two") && d.diff.contains("+TWO") && !d.untracked);
+        assert!(file_diff(root.clone(), "gone.txt".into()).unwrap().diff.contains("-x"));
+        let n = file_diff(root.clone(), "sub/new [1].txt".into()).unwrap();
+        assert!(n.diff.is_empty() && n.untracked);
+
+        assert!(git_discard(root.clone(), "".into()).is_err());
+        assert!(git_discard(root.clone(), "sub".into()).is_err());
+        assert!(git_discard(root.clone(), "../a.txt".into()).is_err());
+        git_discard(root.clone(), "a.txt".into()).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one\ntwo\n");
+        git_discard(root.clone(), "gone.txt".into()).unwrap();
+        assert!(dir.join("gone.txt").is_file());
+        git_discard(root.clone(), "sub/new [1].txt".into()).unwrap();
+        assert!(!dir.join("sub/new [1].txt").exists());
+        assert!(git_status(root.clone()).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
