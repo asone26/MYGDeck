@@ -142,6 +142,7 @@ function applyTheme() {
   const light = themePref === "light";
   document.documentElement.dataset.theme = light ? "light" : "dark";
   setTermTheme(light);
+  getCurrentWindow().setTheme(light ? "light" : "dark").catch(() => {});
   const btn = $("theme-btn");
   if (!btn) return;
   const order = Object.keys(THEMES);
