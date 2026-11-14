@@ -745,3 +745,17 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .mod-p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--faint); }
 .mod-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(var(--ink), 0.05); font-size: 12.5px; }
 .mod-steps { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.65; color: var(--text); }
+
+/* Branch badge, shell send button, slash/mention hints, and Ctrl+F find bar */
+.b-branch { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(var(--ink), 0.14); background: rgba(var(--ink), 0.05); color: var(--faint); cursor: pointer; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.b-branch:hover { color: var(--text); background: rgba(var(--ink), 0.12); }
+.shell { position: relative; }
+.shell-send { position: absolute; top: 8px; right: 12px; z-index: 3; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(var(--ink), 0.18); background: var(--card, #171a23); color: var(--text); cursor: pointer; opacity: 0.85; }
+.shell-send:hover { opacity: 1; background: rgba(var(--ink), 0.16); }
+.slash li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.slash-hint { font-size: 11px; color: var(--faint); flex-shrink: 0; }
+.find-bar { position: fixed; top: 46px; right: 18px; z-index: 90; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 10px; border: 1px solid rgba(var(--ink), 0.18); background: var(--card, #171a23); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.find-bar[hidden] { display: none; }
+.find-in { width: 200px; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.05); color: var(--text); font: inherit; font-size: 12.5px; outline: none; }
+.find-bar button { padding: 3px 7px; border-radius: 6px; border: 0; background: rgba(var(--ink), 0.08); color: var(--text); font-size: 11px; cursor: pointer; }
+.find-bar button:hover { background: rgba(var(--ink), 0.16); }

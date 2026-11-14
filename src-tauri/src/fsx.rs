@@ -361,6 +361,43 @@ pub fn parse_shortstat(s: &str) -> DiffStat {
     DiffStat { files: num("changed"), added: num("insertion"), removed: num("deletion") }
 }
 
+#[derive(Serialize)]
+pub struct BranchInfo {
+    pub branch: String,
+    pub pr_url: Option<String>,
+}
+
+/// Convert a git remote URL (`git@github.com:o/r.git` or `https://github.com/o/r.git`) to a web compare/PR URL.
+pub fn remote_compare_url(remote: &str, branch: &str) -> Option<String> {
+    let r = remote.trim().trim_end_matches(".git");
+    if branch.is_empty() || branch == "HEAD" {
+        return None;
+    }
+    let slug = |host: &str| -> Option<&str> {
+        r.strip_prefix(&format!("https://{host}/"))
+            .or_else(|| r.strip_prefix(&format!("http://{host}/")))
+            .or_else(|| r.strip_prefix(&format!("git@{host}:")))
+    };
+    if let Some(repo) = slug("github.com") {
+        return Some(format!("https://github.com/{repo}/compare/{branch}?expand=1"));
+    }
+    if let Some(repo) = slug("gitlab.com") {
+        return Some(format!("https://gitlab.com/{repo}/-/merge_requests/new?merge_request[source_branch]={branch}"));
+    }
+    None
+}
+
+/// Current git branch and (if origin is GitHub/GitLab) a one-click PR/Compare URL.
+#[tauri::command]
+pub fn git_branch_info(root: String) -> Option<BranchInfo> {
+    let branch = git(&root, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
+    if branch.is_empty() {
+        return None;
+    }
+    let pr_url = git(&root, &["remote", "get-url", "origin"]).and_then(|u| remote_compare_url(&u, &branch));
+    Some(BranchInfo { branch, pr_url })
+}
+
 #[tauri::command]
 pub fn git_shortstat(root: String) -> Option<DiffStat> {
     git(&root, &["diff", "--shortstat", "HEAD"]).map(|s| parse_shortstat(&s))
@@ -666,5 +703,18 @@ mod tests {
         let after = std::fs::read_to_string(dir.join("m.txt")).unwrap();
         assert!(after.contains("line2\n") && after.contains("NINETEEN\n"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn builds_pr_compare_url() {
+        assert_eq!(
+            remote_compare_url("git@github.com:org/repo.git", "feat/x").as_deref(),
+            Some("https://github.com/org/repo/compare/feat/x?expand=1")
+        );
+        assert_eq!(
+            remote_compare_url("https://gitlab.com/org/repo", "main").as_deref(),
+            Some("https://gitlab.com/org/repo/-/merge_requests/new?merge_request[source_branch]=main")
+        );
+        assert_eq!(remote_compare_url("https://example.com/a/b", "main"), None);
     }
 }

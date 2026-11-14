@@ -447,3 +447,18 @@ export function detectLocalhostUrl(text) {
   if (port < 80 || port > 65535) return null;
   return { url: m[0].replace(/[.,;:!?]+$/, ""), port };
 }
+
+export const DEFAULT_SNIPPETS = [
+  { cmd: "/review", hint: "변경 코드 리뷰", prompt: "방금 변경된 코드를 검토하고 버그나 개선점을 알려줘." },
+  { cmd: "/test", hint: "테스트 실행·수정", prompt: "테스트를 실행하고 실패하는 부분만 고쳐줘." },
+  { cmd: "/fix", hint: "최근 오류 수정", prompt: "방금 발생한 오류 원인을 찾아 수정해줘." },
+  { cmd: "/commit", hint: "변경사항 커밋", prompt: "지금까지 변경사항을 확인하고 적절한 커밋 메시지로 커밋해줘." },
+];
+
+/** Active `@query` token immediately before the cursor, or null if not typing a file mention. */
+export function mentionToken(value, cursor = value.length) {
+  const before = String(value ?? "").slice(0, cursor);
+  const m = /(?:^|\s)(@([^\s@]*))$/.exec(before);
+  if (!m) return null;
+  return { start: before.length - m[1].length, end: cursor, query: m[2] };
+}

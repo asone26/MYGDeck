@@ -100,6 +100,7 @@ pub fn run() {
             fsx::run_shell_cmd,
             fsx::git_push,
             fsx::git_ahead,
+            fsx::git_branch_info,
             fsx::git_shortstat,
             fsx::git_worktree_add,
             fsx::git_worktree_merge,

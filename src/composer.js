@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "@tauri-apps/plugin-dialog";
 import { poolReady } from "./connections.js";
-import { ROUTE_CHIP, keyLabel, nextRoute, routeInput } from "./logic.js";
+import { DEFAULT_SNIPPETS, ROUTE_CHIP, fuzzyFilter, keyLabel, mentionFor, mentionToken, nextRoute, routeInput } from "./logic.js";
 import { ICONS, icon } from "./icons.js";
 
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
@@ -29,6 +29,12 @@ export class Composer {
     this.slash = el.querySelector(".slash");
     this.thumbs = el.querySelector(".thumbs");
     this.sel = 0;
+    this.history = [];
+    this.histIdx = -1;
+    this.histDraft = "";
+    this.menuItems = [];
+    this.menuMode = "slash";
+    this.mentionSpan = null;
 
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
@@ -84,6 +90,21 @@ export class Composer {
         return;
       }
     }
+    if (e.key === "ArrowUp" && this.history.length && this.ta.selectionStart === this.ta.selectionEnd && !this.ta.value.slice(0, this.ta.selectionStart).includes("\n")) {
+      e.preventDefault();
+      if (this.histIdx === -1) this.histDraft = this.ta.value;
+      this.histIdx = Math.min(this.histIdx + 1, this.history.length - 1);
+      this.ta.value = this.history[this.history.length - 1 - this.histIdx];
+      this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
+      return this.update();
+    }
+    if (e.key === "ArrowDown" && this.histIdx >= 0 && this.ta.selectionStart === this.ta.selectionEnd && !this.ta.value.slice(this.ta.selectionEnd).includes("\n")) {
+      e.preventDefault();
+      this.histIdx--;
+      this.ta.value = this.histIdx < 0 ? this.histDraft : this.history[this.history.length - 1 - this.histIdx];
+      this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
+      return this.update();
+    }
     if (e.key === "ArrowRight" && !this.ta.value && !this.busy && this.ghost) {
       e.preventDefault();
       this.ta.value = this.ghost;
@@ -100,7 +121,7 @@ export class Composer {
     }
   }
 
-  update() {
+  async update() {
     this.ta.style.height = "auto";
     // border-box: scrollHeight leaves out the border, so add it back or the box shrinks on first input.
     const border = this.ta.offsetHeight - this.ta.clientHeight;
@@ -115,16 +136,42 @@ export class Composer {
         t.remove();
       }
     }
-    const cmds = this.card.adapter?.commands ?? [];
-    if (/^\/\S*$/.test(v) && cmds.length) this.showSlash(cmds.filter((c) => c.startsWith(v)));
-    else this.slash.hidden = true;
+    const m = mentionToken(v, this.ta.selectionStart);
+    if (m) {
+      this.mentionSpan = m;
+      const files = await this.card.fileList();
+      if (this.ta.value !== v) return; // input changed while loading
+      const hits = fuzzyFilter(files, m.query).slice(0, 12);
+      return this.showSlash(
+        hits.map((path) => ({ label: path, hint: "@파일", value: mentionFor(this.card.adapter?.mention, path) })),
+        "mention",
+      );
+    }
+    this.mentionSpan = null;
+    if (/^\/\S*$/.test(v)) {
+      const cmds = (this.card.adapter?.commands ?? []).map((c) => ({ label: c, hint: "명령", value: c + " " }));
+      const seen = new Set(cmds.map((c) => c.label));
+      const snips = DEFAULT_SNIPPETS.filter((s) => !seen.has(s.cmd)).map((s) => ({ label: s.cmd, hint: s.hint, value: s.prompt }));
+      const all = [...cmds, ...snips].filter((x) => x.label.startsWith(v));
+      this.showSlash(all, "slash");
+    } else this.slash.hidden = true;
   }
 
-  showSlash(items) {
+  showSlash(items, mode = "slash") {
+    this.menuMode = mode;
+    this.menuItems = items;
     this.slash.textContent = "";
-    items.forEach((c, i) => {
+    items.forEach((item, i) => {
       const li = document.createElement("li");
-      li.textContent = c;
+      const name = document.createElement("span");
+      name.textContent = item.label;
+      li.append(name);
+      if (item.hint) {
+        const hint = document.createElement("small");
+        hint.className = "slash-hint";
+        hint.textContent = item.hint;
+        li.append(hint);
+      }
       if (i === 0) li.className = "on";
       li.onmousedown = (e) => {
         e.preventDefault();
@@ -147,8 +194,18 @@ export class Composer {
   }
 
   pick() {
-    const li = this.slash.children[this.sel];
-    if (li) this.ta.value = li.textContent + " ";
+    const item = this.menuItems[this.sel];
+    if (item) {
+      if (this.menuMode === "mention" && this.mentionSpan) {
+        const { start, end } = this.mentionSpan;
+        const val = this.ta.value;
+        this.ta.value = val.slice(0, start) + item.value + " " + val.slice(end).replace(/^\s*/, "");
+        const pos = start + item.value.length + 1;
+        this.ta.setSelectionRange(pos, pos);
+      } else {
+        this.ta.value = item.value;
+      }
+    }
     this.slash.hidden = true;
     this.update();
     this.ta.focus();
@@ -218,6 +275,11 @@ export class Composer {
       this.setLast(item);
       this.dispatch(route, item.text);
     }
+    if (this.history.at(-1) !== text) {
+      this.history.push(text);
+      if (this.history.length > 30) this.history.shift();
+    }
+    this.histIdx = -1;
     this.ta.value = "";
     this.update();
   }

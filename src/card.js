@@ -14,7 +14,7 @@ import { elapsed, renderSummary, summaryLines } from "./summary.js";
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
+  <span class="badge"></span><span class="stext"></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
   <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
@@ -24,7 +24,7 @@ const TEMPLATE = `
   <details class="m-spec"><summary>${icon(ICONS.FileText)}스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
-<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div></div>
+<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>
@@ -62,8 +62,10 @@ export class Card {
     this.$(".b-restart").onclick = () => this.restart();
     this.$(".b-shell").onclick = () => this.toggleShell();
     this.$(".b-preview").onclick = () => this.previewUrl && openUrl(this.previewUrl);
+    this.$(".b-branch").onclick = () => this.prUrl && openUrl(this.prUrl);
     this.$(".b-test").onclick = () => this.onTestBadgeClick();
     this.$(".ctx").onclick = () => this.manualHandoff();
+    this.$(".shell-send").onclick = () => this.sendShellOutput();
     const grip = this.$(".shell-grip");
     grip.onpointerdown = (e) => {
       grip.setPointerCapture(e.pointerId);
@@ -260,12 +262,22 @@ export class Card {
     this.refreshDiff(n);
   }
 
-  /** Header badge "+12 −3": lines changed since the last commit (B5). */
+  /** Header badge "+12 −3": lines changed since the last commit (B5), plus current branch / PR link. */
   async refreshDiff(changedFiles) {
-    const d = changedFiles ? await invoke("git_shortstat", { root: this.root }).catch(() => null) : null;
+    const [d, info] = await Promise.all([
+      changedFiles ? invoke("git_shortstat", { root: this.root }).catch(() => null) : null,
+      invoke("git_branch_info", { root: this.root }).catch(() => null),
+    ]);
     const b = this.$(".diff");
     b.hidden = !d || !(d.added || d.removed);
     if (!b.hidden) b.textContent = `+${d.added} −${d.removed}`;
+    const br = this.$(".b-branch");
+    this.prUrl = info?.pr_url ?? null;
+    br.hidden = !info?.branch;
+    if (!br.hidden) {
+      br.textContent = this.prUrl ? `${info.branch} ↗` : info.branch;
+      br.title = this.prUrl ? `${info.branch} · 클릭하면 PR/Compare 페이지 열기` : `현재 브랜치: ${info.branch}`;
+    }
   }
 
   /** Open the file panel on the changed files, and the first one in the review view. */
@@ -771,6 +783,12 @@ export class Card {
     box.hidden = !box.hidden;
     if (box.hidden) this.focusDefault();
     else this.shell.term.focus();
+  }
+
+  sendShellOutput() {
+    const out = this.shell?.lastLines(30, false).join("\n").trim();
+    if (!out) return message("하단 터미널에 보낼 출력이 없습니다.", { kind: "info" });
+    this.composer.insert(`터미널 실행 결과입니다. 오류가 있으면 원인을 파악해 고쳐주세요:\n\`\`\`\n${out}\n\`\`\`\n`);
   }
 
   focusDefault() {

@@ -260,3 +260,11 @@ test("detectLocalhostUrl finds local server URLs in ANSI terminal output", async
   assert.equal(isDeckKey({ code: "KeyK", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }, false), true);
   assert.equal(isDeckKey({ code: "KeyK", metaKey: true, altKey: false, shiftKey: false, ctrlKey: false }, true), true);
 });
+
+test("mentionToken extracts @query at cursor only after start or whitespace", async () => {
+  const { mentionToken } = await import("./logic.js");
+  assert.deepEqual(mentionToken("check @src/ca", 13), { start: 6, end: 13, query: "src/ca" });
+  assert.deepEqual(mentionToken("@", 1), { start: 0, end: 1, query: "" });
+  assert.equal(mentionToken("user@example.com", 16), null);
+  assert.equal(mentionToken("done @file ", 11), null);
+});

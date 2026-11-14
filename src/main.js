@@ -491,6 +491,7 @@ function openPalette() {
     { label: "여러 프로젝트에 동시 지시 (브로드캐스트)", hint: "비교 실행", run: openBroadcast },
     ...(c ? [
       { label: `${c.name}: 파일 빠른 열기`, hint: keyLabel("Ctrl+P"), run: quickOpen },
+      { label: `${c.name}: 화면 내 텍스트 검색`, hint: keyLabel("Ctrl+F"), run: openFind },
       { label: `${c.name}: 스펙 패널 열기/닫기`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
       { label: `${c.name}: 하단 터미널 열기/닫기`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
       { label: `${c.name}: GUI / CLI 화면 전환`, hint: keyLabel("Ctrl+."), run: () => c.toggleView() },
@@ -621,12 +622,37 @@ function openMobileGuide() {
   overlay.replaceChildren(box);
 }
 
+function openFind() {
+  let bar = document.getElementById("find-bar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "find-bar";
+    bar.className = "find-bar";
+    bar.innerHTML = `<input class="find-in" placeholder="화면 내 검색…" spellcheck="false"><button class="find-prev" title="이전 (Shift+Enter)">▲</button><button class="find-next" title="다음 (Enter)">▼</button><button class="find-x" title="닫기 (Esc)">✕</button>`;
+    document.body.append(bar);
+    const input = bar.querySelector(".find-in");
+    const run = (back = false) => input.value && window.find(input.value, false, back, true, false, false, false);
+    input.onkeydown = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); bar.hidden = true; app.cards[app.active]?.focusDefault(); }
+      else if (e.key === "Enter") { e.preventDefault(); run(e.shiftKey); }
+    };
+    bar.querySelector(".find-prev").onclick = () => run(true);
+    bar.querySelector(".find-next").onclick = () => run(false);
+    bar.querySelector(".find-x").onclick = () => { bar.hidden = true; app.cards[app.active]?.focusDefault(); };
+  }
+  bar.hidden = false;
+  const input = bar.querySelector(".find-in");
+  input.focus();
+  input.select();
+}
+
 function openShortcuts() {
   if (overlayKind === "shortcuts") return closeOverlay();
   overlayKind = "shortcuts";
   overlay.hidden = false;
   const items = [
     ["Ctrl+K", "커맨드 팔레트 열기"],
+    ["Ctrl+F", "화면 내 텍스트 검색"],
     ["Ctrl+Space", "다음 대기 프로젝트로 이동"],
     ["Ctrl+0", "전체 보기 열기 / 닫기"],
     ["Ctrl+1~9", "해당 번호 프로젝트로 이동"],
@@ -681,10 +707,14 @@ window.addEventListener(
       overviewSel = (overviewSel + step + app.cards.length) % app.cards.length;
       return renderOverview();
     }
-    // Ctrl+P belongs to the CLI while the terminal has focus (spec 3.3); ⌘P on macOS never reaches it.
+    // Ctrl+P / Ctrl+F belong to the CLI while the terminal has focus (spec 3.3); ⌘P / ⌘F on macOS never reach it.
     if (keyCode(e) === "KeyP" && isDeckMod(e, "KeyP") && (IS_MAC || !e.target.closest?.(".xterm"))) {
       e.preventDefault();
       return quickOpen();
+    }
+    if (keyCode(e) === "KeyF" && isDeckMod(e, "KeyF") && (IS_MAC || !e.target.closest?.(".xterm"))) {
+      e.preventDefault();
+      return openFind();
     }
     if (!isDeckKey(e)) return;
     e.preventDefault();
