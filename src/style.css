@@ -8,17 +8,17 @@
 :root {
   --bg: #05060a;
   /* glass: translucent so the aura shows through; opaque tones are for menus and the terminal screen */
-  --glass: rgba(14, 15, 21, 0.5);
+  --glass: rgba(14, 15, 21, 0.64);
   --glass-hi: rgba(var(--ink), 0.045);
   --panel: #0e0f14;
   --raised: #171920;
   --hover: #21232b;
   --screen: #0a0b10;
-  --line: rgba(var(--ink), 0.07);
-  --line-2: rgba(var(--ink), 0.12);
-  --fg: #eef0f5;
-  --muted: #a6abb9;
-  --faint: #848a9b;
+  --line: rgba(var(--ink), 0.08);
+  --line-2: rgba(var(--ink), 0.14);
+  --fg: #f4f6fa;
+  --muted: #b8becb;
+  --faint: #989fb0;
   --ok: #4fd6a0;
   --warn: #ffb547;
   --bad: #ff6b6e;
@@ -46,7 +46,7 @@
   --sans: "Pretendard Variable", "Pretendard", "Segoe UI Variable Text", "Segoe UI", system-ui, "Malgun Gothic", sans-serif;
   font-family: var(--sans);
   font-size: 14px;
-  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   color: var(--fg);
   background: var(--bg);
   color-scheme: dark;
@@ -56,17 +56,17 @@
  * lights that fall as soft colored shade (multiply). Secondary and state colors keep 4.5:1. */
 :root[data-theme="light"] {
   --bg: #e6e2d9;
-  --glass: rgba(246, 243, 236, 0.5);
-  --glass-hi: rgba(250, 248, 243, 0.55);
+  --glass: rgba(246, 243, 236, 0.72);
+  --glass-hi: rgba(250, 248, 243, 0.65);
   --panel: #efebe3;
   --raised: #f6f3ec;
   --hover: #e4dfd5;
   --screen: #f3f0e9;
-  --line: rgba(60, 52, 38, 0.1);
-  --line-2: rgba(60, 52, 38, 0.17);
-  --fg: #2b2a26;
-  --muted: #57534b;
-  --faint: #625e55;
+  --line: rgba(60, 52, 38, 0.12);
+  --line-2: rgba(60, 52, 38, 0.2);
+  --fg: #1d1c18;
+  --muted: #47433c;
+  --faint: #555149;
   --ok: #2a6343;
   --warn: #7f4b10;
   --bad: #a33a32;
@@ -186,9 +186,10 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
   border-bottom: 1px solid var(--line);
   background: linear-gradient(rgba(var(--scrim), 0.72), rgba(var(--scrim), 0.5));
 }
-/* hints stay quieter than the tabs */
-.keys { display: flex; gap: 12px; color: var(--faint); font-size: 12px; white-space: nowrap; margin-left: auto; }
-.keys kbd { font: 12px var(--mono); color: var(--muted); padding: 0 4px; border-radius: 4px; border: 1px solid var(--line-2); background: rgba(var(--ink), 0.03); }
+#add-btn, #keys-btn, #conn-btn { width: 32px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 999px; color: var(--muted); background: transparent; border-color: var(--line-2); }
+#add-btn:hover, #keys-btn:hover, #conn-btn:hover { color: var(--fg); background: rgba(var(--ink), 0.08); }
+#add-btn .ic, #keys-btn .ic, #conn-btn .ic { width: 16px; height: 16px; }
+#keys-btn { margin-left: auto; }
 #chips { position: relative; flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .chip {
   position: relative; z-index: 1; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; white-space: nowrap; max-width: 340px;
@@ -209,10 +210,6 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
   transition: transform 0.45s var(--ease), width 0.45s var(--ease), height 0.45s var(--ease), background-color 0.45s, box-shadow 0.45s, opacity 0.2s;
 }
 .glider.still { transition: none; }
-#add-btn, #conn-btn { width: 32px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 999px; color: var(--muted); background: transparent; border-color: var(--line-2); }
-#add-btn:hover, #conn-btn:hover { color: var(--fg); background: rgba(var(--ink), 0.08); }
-#add-btn .ic, #conn-btn .ic { width: 16px; height: 16px; }
-@media (max-width: 1100px) { .keys { display: none; } #theme-btn { margin-left: auto; } }
 
 /* deck: Auto preset (spec 3.0 ⑥) */
 #deck { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
@@ -611,6 +608,15 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .qo-in { width: 100%; box-sizing: border-box; background: rgba(var(--scrim), 0.6); color: var(--fg); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 12px; font: 14px var(--mono); }
 .qo-in:focus { outline: none; border-color: var(--work); box-shadow: 0 0 0 4px color-mix(in srgb, var(--work) 16%, transparent); }
 .qo-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 55vh; overflow: auto; font: 13px/1.5 var(--mono); }
+.keys-box { width: min(580px, 92vw); padding: 16px; }
+.keys-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.keys-head .qo-title { padding: 0; font-size: 14px; font-weight: 600; color: var(--fg); }
+.keys-close { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 999px; border-color: transparent; background: transparent; color: var(--muted); }
+.keys-close:hover { color: var(--fg); background: rgba(var(--ink), 0.08); }
+.keys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 16px; }
+.keys-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: var(--r-xs); font-size: 13px; color: var(--muted); }
+.keys-row:hover { background: rgba(var(--ink), 0.04); color: var(--fg); }
+.keys-row kbd { font: 12px var(--mono); color: var(--fg); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: rgba(var(--ink), 0.05); white-space: nowrap; }
 .ov { width: min(1200px, 94vw); max-height: 84vh; overflow: auto; padding: 4px; }
 .ov-title { color: var(--fg); }
 .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }

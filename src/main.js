@@ -128,9 +128,8 @@ function reflowLights() {
 }
 window.addEventListener("resize", reflowLights);
 
-// Theme: dark (default), light, or follow the OS. A per-machine preference, kept in the window's storage.
-const THEMES = { dark: ["다크", ICONS.Moon], light: ["밝게", ICONS.Sun], system: ["시스템 설정 따라가기", ICONS.SunMoon] };
-const osLight = matchMedia("(prefers-color-scheme: light)");
+// Theme: dark (default) or light. A per-machine preference, kept in the window's storage.
+const THEMES = { dark: ["다크", ICONS.Moon], light: ["밝게", ICONS.Sun] };
 let themePref = (() => {
   try {
     return THEMES[localStorage.getItem("mygdeck.theme")] ? localStorage.getItem("mygdeck.theme") : "dark";
@@ -140,7 +139,7 @@ let themePref = (() => {
 })();
 
 function applyTheme() {
-  const light = themePref === "light" || (themePref === "system" && osLight.matches);
+  const light = themePref === "light";
   document.documentElement.dataset.theme = light ? "light" : "dark";
   setTermTheme(light);
   const btn = $("theme-btn");
@@ -151,7 +150,6 @@ function applyTheme() {
   btn.title = `테마: ${THEMES[themePref][0]} · 누르면 ${THEMES[next][0]}`;
 }
 applyTheme();
-osLight.addEventListener("change", () => themePref === "system" && applyTheme());
 
 function cycleTheme() {
   const order = Object.keys(THEMES);
@@ -167,19 +165,8 @@ async function boot() {
   const addBtn = document.getElementById("add-btn");
   addBtn.title = keyLabel(addBtn.title);
   addBtn.innerHTML = icon(ICONS.Plus);
+  $("keys-btn").innerHTML = icon(ICONS.Keyboard);
   $("conn-btn").innerHTML = icon(ICONS.KeyRound);
-  // "Ctrl+P 파일 · ..." → key caps + labels
-  document.querySelectorAll(".keys").forEach((k) => {
-    const items = k.textContent.split(" · ").map((it) => {
-      const [key, ...label] = keyLabel(it).split(" ");
-      const span = document.createElement("span");
-      const kbd = document.createElement("kbd");
-      kbd.textContent = key;
-      span.append(kbd, " " + label.join(" "));
-      return span;
-    });
-    k.replaceChildren(...items);
-  });
   await listen("pty-data", (e) => ptys.get(e.payload.id)?.received(e.payload.data, !!e.payload.replay));
   await listen("pty-exit", (e) => ptys.get(e.payload.id)?.exited(e.payload.code));
   await listen("daemon-lost", () => [...ptys.values()].forEach((p) => p.exited(null)));
@@ -203,6 +190,7 @@ async function boot() {
   $("add-first").querySelector("kbd").textContent = keyLabel("Ctrl+'");
   $("strip").prepend(glider);
   $("grid").addEventListener("scroll", reflowLights, { passive: true });
+  $("keys-btn").onclick = openShortcuts;
   $("conn-btn").onclick = () => {
     overlayKind = "connections";
     overlay.hidden = false;
@@ -481,6 +469,45 @@ async function quickOpen() {
     }
   };
   draw();
+}
+
+function openShortcuts() {
+  if (overlayKind === "shortcuts") return closeOverlay();
+  overlayKind = "shortcuts";
+  overlay.hidden = false;
+  const items = [
+    ["Ctrl+Space", "다음 대기 프로젝트로 이동"],
+    ["Ctrl+0", "전체 보기 열기 / 닫기"],
+    ["Ctrl+1~9", "해당 번호 프로젝트로 이동"],
+    ["Ctrl+PgUp / PgDn", "이전 / 다음 프로젝트"],
+    ["Ctrl+'", "프로젝트 폴더 추가"],
+    ["Ctrl+P", "파일 빠른 열기"],
+    ["Ctrl+.", "CLI / GUI 화면 전환"],
+    ["Ctrl+`", "하단 터미널 열기 / 닫기"],
+    ["Ctrl+;", "탐색기 · 뷰어 열기 / 닫기"],
+    ["Ctrl+I", "선택한 코드 위치 입력창에 넣기"],
+    ["Ctrl++ / -", "카드 크기 조절"],
+    ["Ctrl+Tab", "카드 내 포커스 전환"],
+    ["Ctrl+Q", "실행 중인 에이전트 중단"],
+    ["Ctrl+F4", "현재 프로젝트 닫기"],
+    ["Esc", "팝업 닫기"],
+  ];
+  const box = document.createElement("div");
+  box.className = "qo keys-box";
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">키보드 단축키</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div><div class="keys-grid"></div>`;
+  box.querySelector(".keys-close").onclick = closeOverlay;
+  const grid = box.querySelector(".keys-grid");
+  for (const [k, label] of items) {
+    const row = document.createElement("div");
+    row.className = "keys-row";
+    const kbd = document.createElement("kbd");
+    kbd.textContent = keyLabel(k);
+    const span = document.createElement("span");
+    span.textContent = label;
+    row.append(kbd, span);
+    grid.append(row);
+  }
+  overlay.replaceChildren(box);
 }
 
 overlay.addEventListener("mousedown", (e) => e.target === overlay && closeOverlay());
