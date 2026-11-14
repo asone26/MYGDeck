@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { keyLabel, lineRange, mentionFor, parseDiff, addedRows, formatReviewComments } from "./logic.js";
 
 // Syntax highlighting is the largest dependency; load it only when a file is first opened.
 let hljsLoad = null;
 const loadHljs = () => (hljsLoad ??= import("highlight.js/lib/common").then((m) => m.default));
-let mdLoad = null;
-const loadMd = () => (mdLoad ??= Promise.all([import("marked"), import("dompurify")]).then(([m, d]) => ({ marked: m.marked, purify: d.default })));
 
 const IMG_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
 const HIGHLIGHT_LIMIT = 300_000;
@@ -269,8 +269,7 @@ export class Viewer {
       ]);
       this.lastText = text;
       if (showMd) {
-        const { marked, purify } = await loadMd();
-        this.mdBox.innerHTML = purify.sanitize(marked.parse(text));
+        this.mdBox.innerHTML = DOMPurify.sanitize(marked.parse(text));
       } else {
         this.render(text, changed, hljs);
       }

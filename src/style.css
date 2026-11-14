@@ -217,8 +217,9 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
 #grid[data-layout="one"] { grid-template-columns: minmax(0, 1fr); }
 #grid[data-layout="two"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #grid[data-layout="three"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-/* 4+: same 3-wide columns, the rest scroll sideways. */
-#grid[data-layout="many"] { grid-auto-flow: column; grid-auto-columns: calc((100% - 24px) / 3); grid-template-rows: minmax(0, 1fr); overflow-x: auto; }
+/* 4+: same 3-wide columns, the rest scroll sideways (wheel inside the grid scrolls horizontally; no scrollbar). */
+#grid[data-layout="many"] { grid-auto-flow: column; grid-auto-columns: calc((100% - 24px) / 3); grid-template-rows: minmax(0, 1fr); overflow-x: auto; scrollbar-width: none; }
+#grid[data-layout="many"]::-webkit-scrollbar { display: none; }
 .head[draggable="true"] { cursor: grab; }
 .card.drop { outline: 2px dashed var(--pc); outline-offset: -2px; }
 /* Side column: shrunk cards (spec 3.0 ⑤⑥). */
@@ -285,9 +286,42 @@ input, select, textarea { transition: border-color 0.16s var(--ease), box-shadow
 .head .idx { color: var(--faint); font: 12px var(--mono); }
 /* the name never shrinks to nothing: it is how you tell cards apart */
 .head .name { flex: 0 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; max-width: 40%; font-weight: 600; font-size: 14px; }
-/* field-sizing: width follows the shown option, not the longest menu item */
-.agent { field-sizing: content; align-self: center; color: var(--muted); background: rgba(var(--ink), 0.04); font-size: 12px; border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 8px; }
-.agent option { background: var(--raised); color: var(--fg); }
+/* agent picker pill & custom popover menu */
+.agent {
+  display: inline-flex; align-items: center; gap: 5px; align-self: center; height: 28px; box-sizing: border-box;
+  color: var(--muted); background: rgba(var(--ink), 0.04); font-size: 12px;
+  border: 1px solid var(--line-2); border-radius: 999px; padding: 0 9px 0 11px; white-space: nowrap;
+}
+.agent:hover:not(:disabled), .agent.open { color: var(--fg); background: rgba(var(--ink), 0.08); border-color: rgba(var(--ink), 0.22); }
+.agent .agent-lbl { overflow: hidden; text-overflow: ellipsis; }
+.agent .agent-chev { width: 13px; height: 13px; opacity: 0.7; transition: transform 0.18s var(--ease); }
+.agent.open .agent-chev { transform: rotate(180deg); }
+.agent-pop {
+  position: fixed; z-index: 9999; min-width: 228px; max-width: 288px; padding: 6px;
+  border-radius: var(--r-md); display: flex; flex-direction: column; gap: 2px;
+  background: rgba(var(--pop), 0.94); backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--line-2); box-shadow: var(--shadow), 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: agent-pop-in 0.16s var(--ease);
+}
+@keyframes agent-pop-in { from { opacity: 0; transform: translateY(4px) scale(0.97); } to { opacity: 1; transform: none; } }
+.agent-pop-head { display: flex; align-items: center; gap: 7px; padding: 6px 10px 7px; font-size: 12px; font-weight: 600; color: var(--fg); }
+.agent-pop-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pc, var(--work)); flex: none; }
+.agent-pop-tag { margin-left: auto; font-size: 10px; font-weight: 500; color: var(--muted); background: rgba(var(--ink), 0.07); padding: 1px 6px; border-radius: 999px; }
+.agent-pop-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.agent-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 10px;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--fg); font-size: 12.5px; cursor: pointer;
+}
+.agent-item .ic { width: 14px; height: 14px; color: var(--muted); flex: none; }
+.agent-item:hover:not(:disabled), .agent-item:focus-visible:not(:disabled) { background: rgba(var(--ink), 0.08); outline: none; }
+.agent-item:hover:not(:disabled) .ic { color: var(--fg); }
+.agent-item:disabled { color: var(--faint); opacity: 0.55; cursor: default; transform: none; }
+.agent-item.danger:hover:not(:disabled) { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.agent-item.danger:hover:not(:disabled) .ic { color: var(--bad); }
+.agent-item-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.agent-item-sub { font-size: 11px; color: var(--faint); font-weight: 400; }
+.agent-pop-badge { margin-left: auto; font-size: 10.5px; color: var(--muted); padding: 1px 6px; border-radius: 999px; background: rgba(var(--ink), 0.06); }
+.agent-pop-badge.off { color: var(--faint); background: transparent; border: 1px solid var(--line); }
 .head .badge { font-size: 13px; }
 .head .stext { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-size: 13px; }
 .card[data-status="waiting"] .head .stext { color: var(--warn); }
@@ -912,8 +946,10 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .ds-grid button, .conn-retry { padding: 3px 9px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; font-size: 12px; }
 .ds-grid button:hover, .conn-retry:hover { border-color: var(--work); }
 .vf-in:focus, .xfilter:focus, .ov-filter:focus { outline: 1px solid var(--work); border-color: var(--work); }
-.b-pin { opacity: 0.45; font-size: 11px; }
-.b-pin.on { opacity: 1; }
+.b-pin { opacity: 0.55; }
+.b-pin.on { opacity: 1; color: var(--work); }
+.b-pin.on .ic { fill: currentColor; }
+.tile-pin { width: 12px; height: 12px; color: var(--work); flex-shrink: 0; }
 .conn-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px; font-size: 12px; background: color-mix(in srgb, var(--bad, #e06c75) 14%, transparent); border-bottom: 1px solid var(--line); }
 .conn-banner[hidden] { display: none; }
 .ov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }

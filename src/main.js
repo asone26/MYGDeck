@@ -215,7 +215,16 @@ async function boot() {
   $("add-first").onclick = addProject;
   $("add-first").querySelector("kbd").textContent = keyLabel("Ctrl+'");
   $("strip").prepend(glider);
-  $("grid").addEventListener("scroll", reflowLights, { passive: true });
+  const grid = $("grid");
+  grid.addEventListener("scroll", reflowLights, { passive: true });
+  grid.addEventListener("wheel", (e) => {
+    if (grid.scrollWidth <= grid.clientWidth + 1) return;
+    if (!e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (!e.shiftKey && hasVerticalScroll(e.target, grid)) return;
+    const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * grid.clientWidth : e.deltaY;
+    grid.scrollLeft += dy;
+    e.preventDefault();
+  }, { passive: false });
   $("keys-btn").onclick = openShortcuts;
   $("conn-btn").onclick = () => {
     overlayKind = "connections";
@@ -406,6 +415,16 @@ function place(box, indexes) {
   box.append(...want);
 }
 
+/** Whether `target` sits inside a terminal or a vertically scrollable pane inside `boundary`. */
+function hasVerticalScroll(target, boundary) {
+  for (let cur = target instanceof Element ? target : target?.parentElement; cur && cur !== boundary; cur = cur.parentElement) {
+    if (cur.classList.contains("xterm")) return true;
+    const oy = getComputedStyle(cur).overflowY;
+    if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight + 1) return true;
+  }
+  return false;
+}
+
 function setActive(i, focus = true) {
   if (i < 0 || i >= app.cards.length) return;
   if (i !== app.active) {
@@ -488,7 +507,8 @@ function renderOverview() {
     t.style.setProperty("--pc", c.color);
     t.style.setProperty("--i", i);
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
-    t.querySelector("b").textContent = `${c.cfg.pinned ? "📌 " : ""}#${i + 1} ${c.name}`;
+    t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
+    if (c.cfg.pinned) t.querySelector(".th").insertAdjacentHTML("afterbegin", icon(ICONS.Pin, "tile-pin"));
     t.querySelector(".cb").innerHTML = statusIcon(c.status);
     const statText = c.stats?.turns ? ` · ${c.stats.turns}턴 (${Math.max(1, Math.round(c.stats.totalMs / 60000))}분)` : "";
     t.querySelector(".tt").textContent = `${c.statusText}${statText}`;

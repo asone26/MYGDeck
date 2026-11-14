@@ -13,10 +13,10 @@ import { elapsed, renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
-  <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
+  <span class="dot"></span><span class="idx"></span><b class="name"></b><button type="button" class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기" aria-haspopup="menu" aria-expanded="false"></button>
   <span class="badge"></span><span class="stext"></span><span class="b-conflict" hidden></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
   <button class="b-perm" title="권한 승인 모드 전환 (확인 / 자동허용)"></button>
-  <button class="b-pin" title="카드 맨 앞에 고정">📌</button>
+  <button class="b-pin" title="카드 맨 앞에 고정">${icon(ICONS.Pin)}</button>
   <button class="b-mute" title="알림 끄기/켜기"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
@@ -64,7 +64,7 @@ export class Card {
     this.$(".name").textContent = this.name;
     this.$(".name").title = this.root;
     this.pick = this.$(".agent");
-    this.pick.onchange = (e) => this.onAgentPick(e.target.value);
+    this.pick.onclick = () => this.toggleAgentMenu();
     this.$(".b-restart").onclick = () => this.restart();
     this.$(".b-shell").onclick = () => this.toggleShell();
     this.$(".b-preview").onclick = () => this.previewUrl && openUrl(this.previewUrl);
@@ -193,29 +193,125 @@ export class Card {
   renderAgentPick() {
     const pick = this.pick;
     // Composer rebuilds its row on agent switch, so re-attach the picker to its bottom-left each time.
+    this.closeAgentMenu();
     this.$(".composer").prepend(pick);
-    const others = this.app.adapters.filter((a) => a.name !== this.adapter?.name);
-    pick.textContent = "";
     const curLabel = this.adapter ? `${this.adapter.name}${this.adapter.detected ? "" : " (미설치)"}` : (this.cfg.command ? "custom" : "shell");
-    pick.append(new Option(curLabel, ""));
-    if (this.adapter) {
-      pick.append(
-        new Option("↻ 새 세션으로 이어가기", "@renew"),
-        ...others.map((a) => {
-          const opt = new Option(`→ ${a.name}${a.detected ? "" : " (미설치)"}(으)로 바꾸기`, a.name);
-          if (!a.detected) opt.disabled = true;
-          return opt;
-        }),
-      );
-      pick.append(new Option("⑂ worktree로 하나 더 열기", "@worktree"));
-    }
-    // Cards opened by "⑂": bring the work home or throw the copy away (git checks it really is one).
-    if (/-wt\d+$/.test(this.root)) pick.append(new Option("⇢ 원래 폴더에 합치기", "@wt-merge"), new Option("✕ 이 worktree 버리기", "@wt-remove"));
+    pick.innerHTML = `<span class="agent-lbl"></span>${icon(ICONS.ChevronDown, "agent-chev")}`;
+    pick.querySelector(".agent-lbl").textContent = curLabel;
     pick.disabled = !this.adapter;
   }
 
+  toggleAgentMenu() {
+    if (this.agentPop) this.closeAgentMenu();
+    else this.openAgentMenu();
+  }
+
+  openAgentMenu() {
+    if (!this.adapter) return;
+    this.closeAgentMenu();
+    const pop = document.createElement("div");
+    pop.className = "agent-pop";
+    pop.setAttribute("role", "menu");
+    pop.style.setProperty("--pc", this.color);
+
+    const head = document.createElement("div");
+    head.className = "agent-pop-head";
+    head.innerHTML = `<span class="agent-pop-dot"></span><span class="agent-pop-name"></span><span class="agent-pop-tag">현재</span>`;
+    head.querySelector(".agent-pop-name").textContent = `${this.adapter.name}${this.adapter.detected ? "" : " (미설치)"}`;
+    pop.append(head);
+
+    const addItem = ({ ic, label, sub, value, badge, badgeOff, disabled, danger }) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `agent-item${danger ? " danger" : ""}`;
+      b.setAttribute("role", "menuitem");
+      if (disabled) b.disabled = true;
+      b.innerHTML = `${icon(ic)}<span class="agent-item-text"><span class="agent-item-lbl"></span>${sub ? `<span class="agent-item-sub"></span>` : ""}</span>${badge ? `<span class="agent-pop-badge${badgeOff ? " off" : ""}"></span>` : ""}`;
+      b.querySelector(".agent-item-lbl").textContent = label;
+      if (sub) b.querySelector(".agent-item-sub").textContent = sub;
+      if (badge) b.querySelector(".agent-pop-badge").textContent = badge;
+      b.onclick = () => {
+        this.closeAgentMenu();
+        this.onAgentPick(value);
+      };
+      pop.append(b);
+    };
+    const addSep = () => {
+      const s = document.createElement("div");
+      s.className = "agent-pop-sep";
+      pop.append(s);
+    };
+
+    addItem({ ic: ICONS.RotateCw, label: "새 세션으로 이어가기", sub: "진행 내역 저장 후 새 대화 시작", value: "@renew" });
+    const others = this.app.adapters.filter((a) => a.name !== this.adapter?.name);
+    if (others.length) {
+      addSep();
+      for (const a of others) {
+        addItem({
+          ic: ICONS.ArrowRight,
+          label: a.name,
+          value: a.name,
+          badge: a.detected ? "전환" : "미설치",
+          badgeOff: !a.detected,
+          disabled: !a.detected,
+        });
+      }
+    }
+    addSep();
+    addItem({ ic: ICONS.GitBranch, label: "worktree로 하나 더 열기", value: "@worktree" });
+    // Cards opened by "⑂": bring the work home or throw the copy away (git checks it really is one).
+    if (/-wt\d+$/.test(this.root)) {
+      addItem({ ic: ICONS.GitMerge, label: "원래 폴더에 합치기", value: "@wt-merge" });
+      addItem({ ic: ICONS.X, label: "이 worktree 버리기", value: "@wt-remove", danger: true });
+    }
+
+    document.body.append(pop);
+    const r = this.pick.getBoundingClientRect();
+    const pr = pop.getBoundingClientRect();
+    const openUp = r.top - pr.height - 6 >= 8 || r.bottom + pr.height + 6 > window.innerHeight - 8;
+    const top = openUp ? Math.max(8, r.top - pr.height - 6) : Math.min(window.innerHeight - pr.height - 8, r.bottom + 6);
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - pr.width - 8);
+    pop.style.top = `${top}px`;
+    pop.style.left = `${left}px`;
+
+    this.agentPop = pop;
+    this.pick.classList.add("open");
+    this.pick.setAttribute("aria-expanded", "true");
+
+    const onPointerDown = (e) => { if (!pop.contains(e.target) && !this.pick.contains(e.target)) this.closeAgentMenu(); };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); this.closeAgentMenu(); this.pick.focus(); return; }
+      const items = [...pop.querySelectorAll(".agent-item:not(:disabled)")];
+      if (!items.length) return;
+      const cur = items.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") { e.preventDefault(); items[(cur + 1) % items.length].focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); items[(cur - 1 + items.length) % items.length].focus(); }
+      else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
+      else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
+    };
+    const onClose = () => this.closeAgentMenu();
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("scroll", onClose, true);
+    this._agentMenuOff = () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("scroll", onClose, true);
+    };
+  }
+
+  closeAgentMenu() {
+    this._agentMenuOff?.();
+    this._agentMenuOff = null;
+    this.agentPop?.remove();
+    this.agentPop = null;
+    this.pick?.classList.remove("open");
+    this.pick?.setAttribute("aria-expanded", "false");
+  }
+
   onAgentPick(value) {
-    this.pick.value = "";
     if (!value) return;
     if (value === "@worktree") return this.openWorktree();
     if (value === "@wt-merge") return this.mergeWorktree();
@@ -1036,6 +1132,7 @@ export class Card {
   }
 
   dispose() {
+    this.closeAgentMenu();
     clearInterval(this.clock);
     this.agent.dispose();
     this.shell?.dispose();
