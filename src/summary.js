@@ -148,6 +148,21 @@ function renderCurrent(card, box, st) {
         rb.title = "이 턴 직전 체크포인트로 되돌리기";
         row.append(rb);
       }
+      const copyBtn = button("답변 복사", async () => {
+        await navigator.clipboard.writeText(card.turn.texts.join("\n\n")).catch(() => {});
+        copyBtn.textContent = "복사됨 ✓";
+        setTimeout(() => { if (copyBtn.isConnected) copyBtn.textContent = "답변 복사"; }, 1400);
+      });
+      const expBtn = button("대화 내보내기", () => {
+        const md = exportMarkdown(card);
+        const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${card.name}-chat.md`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+      row.append(copyBtn, expBtn);
       if (others.length) {
         const sel = el("select", "s-relay");
         sel.title = "이 답변을 다른 프로젝트 카드 입력창으로 전달";

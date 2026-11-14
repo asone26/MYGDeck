@@ -79,8 +79,33 @@ export class Composer {
         .catch((err) => message(`이미지 붙여넣기 실패: ${err}`, { kind: "error" }));
     });
     el.addEventListener("dragover", (e) => e.preventDefault());
-    el.addEventListener("drop", (e) => {
+    el.addEventListener("drop", async (e) => {
       e.preventDefault();
+      const files = [...(e.dataTransfer.files ?? [])];
+      if (files.length) {
+        for (const file of files) {
+          if (file.type.startsWith("image/")) {
+            try {
+              const buf = await file.arrayBuffer();
+              const path = await invoke("save_paste", { bytes: Array.from(new Uint8Array(buf)), ext: file.type.split("/")[1].replace("jpeg", "jpg") });
+              this.thumbs.append(this.thumb(URL.createObjectURL(file), path));
+              this.insert(path);
+            } catch (err) {
+              message(`이미지 드롭 실패: ${err}`, { kind: "error" });
+            }
+          } else if (file.path) {
+            this.insert(file.path);
+          }
+        }
+        return;
+      }
+      const uriList = e.dataTransfer.getData("text/uri-list");
+      if (uriList) {
+        const paths = uriList.split(/\r?\n/).filter((u) => u && !u.startsWith("#")).map((u) => {
+          try { return decodeURIComponent(u.replace(/^file:\/\/\//i, "").replace(/^file:\/\//i, "")); } catch { return u; }
+        });
+        if (paths.length) return this.insert(paths.join(" "));
+      }
       const text = e.dataTransfer.getData("text/plain");
       if (text) this.insert(text);
     });

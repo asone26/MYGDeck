@@ -425,6 +425,63 @@ pub fn git_new_branch(root: String, name: String) -> Result<String, String> {
     Ok(clean.to_string())
 }
 
+/// List local git branches, current branch first.
+#[tauri::command]
+pub fn git_branches(root: String) -> Vec<String> {
+    git(&root, &["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
+        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// Switch to an existing local git branch (`git checkout <name>`).
+#[tauri::command]
+pub fn git_switch_branch(root: String, name: String) -> Result<String, String> {
+    let clean = name.trim();
+    if clean.is_empty() || clean.starts_with('-') || clean.contains("..") || clean.chars().any(|c| c.is_whitespace()) {
+        return Err("올바른 브랜치 이름을 입력하세요".into());
+    }
+    run_git(&root, &["checkout", clean])?;
+    Ok(clean.to_string())
+}
+
+#[derive(Serialize, Debug)]
+pub struct SearchHit {
+    pub path: String,
+    pub line: u32,
+    pub text: String,
+}
+
+/// Lightweight case-insensitive text search across project files (skips files > 512 KB and binary files).
+#[tauri::command]
+pub fn search_in_files(root: String, query: String) -> Vec<SearchHit> {
+    let q = query.trim().to_lowercase();
+    if q.len() < 2 {
+        return vec![];
+    }
+    let mut hits = Vec::new();
+    for rel in list_files(root.clone()) {
+        let Ok(path) = safe_join(&root, &rel) else { continue };
+        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        if meta.len() > 512 * 1024 {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        for (i, line) in content.lines().enumerate() {
+            if line.to_lowercase().contains(&q) {
+                hits.push(SearchHit {
+                    path: rel.clone(),
+                    line: (i + 1) as u32,
+                    text: line.trim().chars().take(120).collect(),
+                });
+                if hits.len() >= 50 {
+                    return hits;
+                }
+            }
+        }
+    }
+    hits
+}
+
 /// Create a GitHub PR draft/PR using `gh pr create`.
 #[tauri::command]
 pub fn git_create_pr(root: String, title: String, body: String) -> Result<String, String> {

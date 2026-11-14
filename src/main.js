@@ -595,6 +595,7 @@ function openPalette() {
     { label: "여러 프로젝트에 동시 지시 (브로드캐스트)", hint: "비교 실행", run: openBroadcast },
     ...(c ? [
       { label: `${c.name}: 파일 빠른 열기`, hint: keyLabel("Ctrl+P"), run: quickOpen },
+      { label: `${c.name}: 프로젝트 코드 내용 검색`, hint: keyLabel("Ctrl+Shift+F"), run: openCodeSearch },
       { label: `${c.name}: 화면 내 텍스트 검색`, hint: keyLabel("Ctrl+F"), run: openFind },
       { label: `${c.name}: 스펙 패널 열기/닫기`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
       { label: `${c.name}: 하단 터미널 열기/닫기`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
@@ -789,6 +790,62 @@ function openFind() {
   input.select();
 }
 
+/** Ctrl+Shift+F: search text inside project files and open in the code viewer. */
+function openCodeSearch() {
+  const c = app.cards[app.active];
+  if (!c) return;
+  if (overlayKind === "codesearch") return closeOverlay();
+  overlayKind = "codesearch";
+  overlay.hidden = false;
+  overlay.innerHTML = `<div class="qo pal"><input class="qo-in" placeholder="${c.name} 코드 내 텍스트 검색…" spellcheck="false"><ul class="qo-list"></ul></div>`;
+  const input = overlay.querySelector("input");
+  const list = overlay.querySelector("ul");
+  let hits = [];
+  let sel = 0;
+  let timer = null;
+  const open = () => {
+    const h = hits[sel];
+    closeOverlay();
+    if (h) c.viewer.open(h.path, "code");
+  };
+  const render = () => {
+    list.textContent = "";
+    hits.forEach((h, i) => {
+      const li = document.createElement("li");
+      if (i === sel) li.className = "on";
+      const main = document.createElement("span");
+      main.textContent = `${h.path}:${h.line}`;
+      const hint = document.createElement("small");
+      hint.className = "pal-hint";
+      hint.textContent = h.text;
+      li.append(main, hint);
+      li.onclick = () => { sel = i; open(); };
+      list.append(li);
+    });
+  };
+  input.oninput = () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { hits = []; render(); return; }
+    timer = setTimeout(async () => {
+      hits = await invoke("search_in_files", { root: c.root, query: q }).catch(() => []);
+      sel = 0;
+      render();
+    }, 180);
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Escape") return closeOverlay();
+    if (e.key === "Enter") { e.preventDefault(); return open(); }
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && hits.length) {
+      e.preventDefault();
+      sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + hits.length) % hits.length;
+      render();
+      list.children[sel]?.scrollIntoView({ block: "nearest" });
+    }
+  };
+  input.focus();
+}
+
 function openShortcuts() {
   if (overlayKind === "shortcuts") return closeOverlay();
   overlayKind = "shortcuts";
@@ -796,6 +853,7 @@ function openShortcuts() {
   const items = [
     ["Ctrl+K", "커맨드 팔레트 열기"],
     ["Ctrl+F", "화면 내 텍스트 검색"],
+    ["Ctrl+Shift+F", "프로젝트 코드 내용 검색"],
     ["Ctrl+Space", "다음 대기 프로젝트로 이동"],
     ["Ctrl+0", "전체 보기 열기 / 닫기"],
     ["Ctrl+1~9", "해당 번호 프로젝트로 이동"],
@@ -857,7 +915,7 @@ window.addEventListener(
     }
     if (keyCode(e) === "KeyF" && isDeckMod(e, "KeyF") && (IS_MAC || !e.target.closest?.(".xterm"))) {
       e.preventDefault();
-      return openFind();
+      return e.shiftKey ? openCodeSearch() : openFind();
     }
     if (!isDeckKey(e)) return;
     e.preventDefault();

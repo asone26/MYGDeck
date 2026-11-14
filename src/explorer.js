@@ -11,7 +11,7 @@ export class Explorer {
       <button class="x-turn" title="이번 턴에서 바뀐 파일만 보기" hidden>이번 턴</button>
       <button class="x-all" title="변경된 모든 파일을 한 화면에서 비교" hidden>전체 비교</button>
       <span class="sp"></span>
-      <button class="x-branch" title="새 작업 브랜치 만들기">브랜치</button>
+      <select class="x-branches" title="브랜치 전환 또는 새 브랜치 만들기" hidden></select>
       <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기">PR</button>
       <button class="x-save" title="바뀐 내용을 커밋합니다 · 메시지는 자동 생성">커밋</button>
       <button class="x-push" title="커밋을 원격 저장소로 올립니다 (git push)">푸시</button></div>
@@ -28,7 +28,15 @@ export class Explorer {
       this.turnBtn.classList.toggle("on", this.turnOnly);
       this.render();
     };
-    el.querySelector(".x-branch").onclick = () => this.newBranch();
+    this.branchSel = el.querySelector(".x-branches");
+    this.branchSel.onchange = () => {
+      const v = this.branchSel.value;
+      if (v === "@new") {
+        this.branchSel.value = this.curBranch ?? "";
+        return this.newBranch();
+      }
+      if (v && v !== this.curBranch) this.git("git_switch_branch", { name: v }, `브랜치 전환: ${v}`);
+    };
     el.querySelector(".x-pr").onclick = () => this.createPr();
     el.querySelector(".x-push").onclick = () => this.git("git_push", {}, "푸시했습니다");
     el.querySelector(".xbar").addEventListener("click", (e) => {
@@ -191,13 +199,24 @@ export class Explorer {
   }
 
   async refresh() {
-    const [st, ahead, since] = await Promise.all([
+    const [st, ahead, since, branches, info] = await Promise.all([
       invoke("git_status", { root: this.card.root }).catch(() => []),
       invoke("git_ahead", { root: this.card.root }).catch(() => 0),
       this.card.turnCheckpoint
         ? invoke("git_changed_since", { root: this.card.root, rev: this.card.turnCheckpoint }).catch(() => null)
         : null,
+      invoke("git_branches", { root: this.card.root }).catch(() => []),
+      invoke("git_branch_info", { root: this.card.root }).catch(() => null),
     ]);
+    this.curBranch = info?.branch ?? null;
+    this.branchSel.hidden = !branches.length && !this.curBranch;
+    if (!this.branchSel.hidden) {
+      this.branchSel.textContent = "";
+      for (const b of branches) this.branchSel.append(new Option(b, b));
+      if (this.curBranch && !branches.includes(this.curBranch)) this.branchSel.append(new Option(this.curBranch, this.curBranch));
+      this.branchSel.append(new Option("+ 새 브랜치…", "@new"));
+      if (this.curBranch) this.branchSel.value = this.curBranch;
+    }
     this.turnFiles = since ? new Set(since) : null;
     this.status = new Map(st.map((s) => [s.path, s.code]));
     for (const p of this.excluded) if (!this.status.has(p)) this.excluded.delete(p);

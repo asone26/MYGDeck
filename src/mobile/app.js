@@ -256,7 +256,8 @@ function renderList() {
       btn.style.setProperty("--pc", colors.get(s.id));
       btn.innerHTML = `<span class="bar-c"></span><span class="main"><span class="name"></span><br><span class="line"></span></span><span class="st"><span class="pulse"></span></span>`;
       btn.querySelector(".name").textContent = nameOf(s);
-      btn.querySelector(".line").textContent = statusLine(s);
+      const diffTxt = s.diff && (s.diff.files || s.diff.added || s.diff.removed) ? ` · ${s.diff.files}파일 +${s.diff.added} −${s.diff.removed}` : "";
+      btn.querySelector(".line").textContent = `${statusLine(s)}${diffTxt}`;
       btn.querySelector(".st").append(LABEL[shown(s)] ?? s.status);
       btn.addEventListener("click", () => (location.hash = encodeURIComponent(s.id)));
       li.append(btn);
@@ -400,7 +401,8 @@ class Detail {
     st.dataset.status = s.status;
     st.innerHTML = `<span class="pulse"></span>`;
     const extra = s.status === "working" && s.text && s.text !== "작업 중" ? " · " + s.text : s.status === "done" ? " · 다음 지시를 기다립니다" : "";
-    st.append(`${LABEL[s.status] ?? s.status}${extra}`);
+    const diffTxt = s.diff && (s.diff.files || s.diff.added || s.diff.removed) ? ` · ${s.diff.files}파일 +${s.diff.added} −${s.diff.removed}` : "";
+    st.append(`${LABEL[s.status] ?? s.status}${extra}${diffTxt}`);
     // Stop (Esc) only means something while a turn runs; on a menu it would silently refuse.
     const canStop = s.status === "working";
     if (!canStop) disarm();

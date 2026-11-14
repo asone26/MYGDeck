@@ -703,10 +703,15 @@ pub fn agents(list: &Value) -> Value {
     let rows = list.as_array().into_iter().flatten().filter(|v| v["id"].as_str().is_some_and(|id| id.contains("#agent|")));
     Value::Array(
         rows.map(|v| {
+            let diff = v["cwd"]
+                .as_str()
+                .filter(|c| !c.is_empty() && std::path::Path::new(c).is_dir())
+                .and_then(|c| crate::fsx::git_shortstat(c.to_string()));
             json!({
                 "id": v["id"], "cwd": v["cwd"], "status": v["status"], "text": v["text"], "tool": v["tool"],
                 "idle_secs": v["idle_secs"], "hooked": v["hooked"], "cols": v["cols"], "rows": v["rows"],
                 "has_turn": v["transcript"].is_string(),
+                "diff": diff,
             })
         })
         .collect(),
