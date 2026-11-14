@@ -198,11 +198,17 @@ pub struct FileDiff {
 
 /// One file's changes against the last commit, for the review view in the code viewer.
 #[tauri::command]
-pub fn file_diff(root: String, rel: String) -> Result<FileDiff, String> {
+pub fn file_diff(root: String, rel: String, ignore_ws: Option<bool>) -> Result<FileDiff, String> {
     let path = safe_join(&root, &rel)?;
-    let diff = git(&root, &["--literal-pathspecs", "diff", "HEAD", "--", &rel])
-        .or_else(|| git(&root, &["--literal-pathspecs", "diff", "--", &rel]))
-        .unwrap_or_default();
+    let mut head_args = vec!["--literal-pathspecs", "diff"];
+    let mut work_args = vec!["--literal-pathspecs", "diff"];
+    if ignore_ws.unwrap_or(false) {
+        head_args.push("-w");
+        work_args.push("-w");
+    }
+    head_args.extend(["HEAD", "--", &rel]);
+    work_args.extend(["--", &rel]);
+    let diff = git(&root, &head_args).or_else(|| git(&root, &work_args)).unwrap_or_default();
     let untracked = diff.is_empty()
         && path.is_file()
         && git(&root, &["--literal-pathspecs", "ls-files", "--", &rel]).is_some_and(|s| s.trim().is_empty());
@@ -685,6 +691,255 @@ pub fn rename_file(root: String, rel: String, name: String) -> Result<(), String
     std::fs::rename(&from, &to).map_err(|e| e.to_string())
 }
 
+fn b64_encode(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+/// Read an image file as a base64 data URL for the viewer preview.
+#[tauri::command]
+pub fn read_file_base64(root: String, rel: String) -> Result<String, String> {
+    let path = safe_join(&root, &rel)?;
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_FILE {
+        return Err("파일이 너무 큽니다 (2MB 초과)".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "bmp" => "image/bmp",
+        _ => "application/octet-stream",
+    };
+    Ok(format!("data:{mime};base64,{}", b64_encode(&bytes)))
+}
+
+/// Create an empty file or directory inside the project.
+#[tauri::command]
+pub fn create_file(root: String, rel: String, is_dir: bool) -> Result<(), String> {
+    let rel = rel.trim().trim_start_matches(['/', '\\']);
+    if rel.is_empty() || rel.split(['/', '\\']).any(|s| s == ".git" || s == "." || s == "..") {
+        return Err("만들 수 없는 경로입니다".into());
+    }
+    let path = safe_join(&root, rel)?;
+    if path.exists() {
+        return Err("같은 이름이 이미 있습니다".into());
+    }
+    if is_dir {
+        std::fs::create_dir_all(&path).map_err(|e| e.to_string())
+    } else {
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, "").map_err(|e| e.to_string())
+    }
+}
+
+/// Delete a file or folder inside the project (refuses root and `.git`).
+#[tauri::command]
+pub fn delete_file(root: String, rel: String) -> Result<(), String> {
+    if !Path::new(&rel).components().any(|c| matches!(c, Component::Normal(_)))
+        || rel.split(['/', '\\']).any(|s| s == ".git")
+    {
+        return Err("삭제할 수 없는 경로입니다".into());
+    }
+    let path = safe_join(&root, &rel)?;
+    if path.is_dir() {
+        std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())
+    }
+}
+
+/// Reveal a file or folder in the OS file manager.
+#[tauri::command]
+pub fn reveal_in_os(root: String, rel: String) -> Result<(), String> {
+    let path = safe_join(&root, &rel)?;
+    #[cfg(target_os = "windows")]
+    {
+        let arg = format!("/select,{}", path.to_string_lossy().replace('/', "\\"));
+        Command::new("explorer").arg(arg).spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").args(["-R", &path.to_string_lossy()]).spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let dir = if path.is_dir() { path.as_path() } else { path.parent().unwrap_or(path.as_path()) };
+        Command::new("xdg-open").arg(dir).spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+}
+
+/// Commits behind upstream.
+#[tauri::command]
+pub fn git_behind(root: String) -> u32 {
+    git(&root, &["rev-list", "--count", "HEAD..@{u}"]).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+}
+
+#[tauri::command]
+pub fn git_pull(root: String) -> Result<String, String> {
+    run_git(&root, &["pull"])
+}
+
+#[derive(Serialize)]
+pub struct StashEntry {
+    index: usize,
+    label: String,
+}
+
+#[tauri::command]
+pub fn git_stash_list(root: String) -> Vec<StashEntry> {
+    let Some(out) = git(&root, &["stash", "list", "--format=%gd%x09%s"]) else {
+        return vec![];
+    };
+    out.lines()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            let (_, msg) = l.split_once('\t')?;
+            Some(StashEntry { index: i, label: msg.to_string() })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn git_stash_op(root: String, op: String, index: Option<usize>) -> Result<String, String> {
+    match op.as_str() {
+        "save" => run_git(&root, &["stash", "push", "-u", "-m", "mygdeck-stash"]),
+        "pop" => {
+            let r = format!("stash@{{{}}}", index.unwrap_or(0));
+            run_git(&root, &["stash", "pop", &r])
+        }
+        "drop" => {
+            let r = format!("stash@{{{}}}", index.unwrap_or(0));
+            run_git(&root, &["stash", "drop", &r])
+        }
+        _ => Err("unknown stash op".into()),
+    }
+}
+
+#[derive(Serialize)]
+pub struct CommitEntry {
+    hash: String,
+    subject: String,
+    author: String,
+    when: String,
+}
+
+#[tauri::command]
+pub fn git_log(root: String, limit: Option<usize>) -> Vec<CommitEntry> {
+    let n = limit.unwrap_or(15).min(50).to_string();
+    let Some(out) = git(&root, &["log", "-n", &n, "--format=%h%x09%s%x09%an%x09%cr"]) else {
+        return vec![];
+    };
+    out.lines()
+        .filter_map(|l| {
+            let mut parts = l.splitn(4, '\t');
+            Some(CommitEntry {
+                hash: parts.next()?.to_string(),
+                subject: parts.next()?.to_string(),
+                author: parts.next()?.to_string(),
+                when: parts.next()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn git_commit_diff(root: String, rev: String) -> Result<String, String> {
+    if !rev.chars().all(|c| c.is_ascii_alphanumeric() || c == '^' || c == '~') {
+        return Err("invalid revision".into());
+    }
+    run_git(&root, &["show", "--no-color", "--stat", "--patch", &rev])
+}
+
+#[tauri::command]
+pub fn git_staged_files(root: String) -> Vec<String> {
+    git(&root, &["diff", "--cached", "--name-only"])
+        .map(|s| s.lines().map(String::from).collect())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn git_stage_toggle(root: String, rel: String, stage: bool) -> Result<(), String> {
+    let _ = safe_join(&root, &rel)?;
+    if stage {
+        run_git(&root, &["add", "--", &rel])?;
+    } else {
+        let _ = run_git(&root, &["reset", "HEAD", "--", &rel]);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_project_scripts(root: String) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(Path::new(&root).join("package.json")) else {
+        return vec![];
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return vec![];
+    };
+    val.get("scripts")
+        .and_then(|s| s.as_object())
+        .map(|m| m.keys().take(8).cloned().collect())
+        .unwrap_or_default()
+}
+
+#[derive(Serialize)]
+pub struct DoctorItem {
+    name: String,
+    ok: bool,
+    detail: String,
+}
+
+#[tauri::command]
+pub fn doctor_check() -> Vec<DoctorItem> {
+    let tools = [("git", "--version"), ("gh", "--version"), ("claude", "--version"), ("codex", "--version"), ("gemini", "--version")];
+    tools
+        .iter()
+        .map(|(bin, flag)| {
+            let mut c = Command::new(bin);
+            c.arg(flag);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                c.creation_flags(0x0800_0000);
+            }
+            match c.output() {
+                Ok(out) if out.status.success() => {
+                    let line = String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("설치됨").trim().to_string();
+                    DoctorItem { name: (*bin).into(), ok: true, detail: line }
+                }
+                _ => DoctorItem { name: (*bin).into(), ok: false, detail: "설치되지 않았거나 PATH에 없음".into() },
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,10 +1061,10 @@ mod tests {
         std::fs::write(dir.join("a.txt"), "one\nTWO\n").unwrap();
         std::fs::remove_file(dir.join("gone.txt")).unwrap();
         std::fs::write(dir.join("sub/new [1].txt"), "fresh\n").unwrap();
-        let d = file_diff(root.clone(), "a.txt".into()).unwrap();
+        let d = file_diff(root.clone(), "a.txt".into(), None).unwrap();
         assert!(d.diff.contains("-two") && d.diff.contains("+TWO") && !d.untracked);
-        assert!(file_diff(root.clone(), "gone.txt".into()).unwrap().diff.contains("-x"));
-        let n = file_diff(root.clone(), "sub/new [1].txt".into()).unwrap();
+        assert!(file_diff(root.clone(), "gone.txt".into(), None).unwrap().diff.contains("-x"));
+        let n = file_diff(root.clone(), "sub/new [1].txt".into(), None).unwrap();
         assert!(n.diff.is_empty() && n.untracked);
 
         assert!(git_discard(root.clone(), "".into()).is_err());
@@ -909,6 +1164,31 @@ mod tests {
         let st = git_status(root.clone());
         assert_eq!(st.len(), 1);
         assert_eq!(st[0].path, "b.txt");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn creates_deletes_and_reads_base64_safely() {
+        assert_eq!(b64_encode(b"Man"), "TWFu");
+        assert_eq!(b64_encode(b"Ma"), "TWE=");
+        assert_eq!(b64_encode(b"M"), "TQ==");
+
+        let dir = std::env::temp_dir().join(format!("mygdeck-fsops-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+
+        assert!(create_file(root.clone(), ".git/hook".into(), false).is_err());
+        assert!(create_file(root.clone(), "../evil.txt".into(), false).is_err());
+        create_file(root.clone(), "sub/img.png".into(), false).unwrap();
+        std::fs::write(dir.join("sub/img.png"), [137u8, 80, 78, 71]).unwrap();
+        let url = read_file_base64(root.clone(), "sub/img.png".into()).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+
+        assert!(delete_file(root.clone(), ".git".into()).is_err());
+        assert!(delete_file(root.clone(), "".into()).is_err());
+        delete_file(root.clone(), "sub/img.png".into()).unwrap();
+        assert!(!dir.join("sub/img.png").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

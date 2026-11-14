@@ -5,8 +5,12 @@ import { DEFAULT_SNIPPETS, ROUTE_CHIP, fuzzyFilter, keyLabel, mentionFor, mentio
 import { ICONS, icon } from "./icons.js";
 
 const SNIP_KEY = "mygdeck.snippets";
-const loadSnippets = () => { try { return JSON.parse(localStorage.getItem(SNIP_KEY) || "[]"); } catch { return []; } };
-const saveSnippets = (list) => { try { localStorage.setItem(SNIP_KEY, JSON.stringify(list)); } catch {} };
+const DRAFT_KEY = "mygdeck.drafts";
+const HIST_KEY = "mygdeck.history";
+const loadJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || "null") ?? d; } catch { return d; } };
+const saveJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const loadSnippets = () => loadJson(SNIP_KEY, []);
+const saveSnippets = (list) => saveJson(SNIP_KEY, list);
 
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
 export class Composer {
@@ -40,12 +44,17 @@ export class Composer {
     this.slash = el.querySelector(".slash");
     this.thumbs = el.querySelector(".thumbs");
     this.sel = 0;
-    this.history = [];
+    this.history = loadJson(HIST_KEY, []);
     this.histIdx = -1;
     this.histDraft = "";
     this.menuItems = [];
     this.menuMode = "slash";
     this.mentionSpan = null;
+    const savedDraft = loadJson(DRAFT_KEY, {})[card.root];
+    if (savedDraft) {
+      this.ta.value = savedDraft;
+      queueMicrotask(() => this.update());
+    }
 
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
@@ -164,6 +173,10 @@ export class Composer {
     this.ta.style.height = Math.min(this.ta.scrollHeight + border, 140) + "px";
     this.ta.style.overflowY = this.ta.scrollHeight > 140 ? "auto" : "hidden";
     const v = this.ta.value;
+    const drafts = loadJson(DRAFT_KEY, {});
+    if (v) drafts[this.card.root] = v;
+    else delete drafts[this.card.root];
+    saveJson(DRAFT_KEY, drafts);
     this.sendBtn.disabled = !v.trim();
     this.snipBtn.hidden = v.trim().length <= 4 || v.trim().startsWith("/");
     // A preview lives as long as its path is still in the box (deleted or sent → gone).
@@ -176,11 +189,16 @@ export class Composer {
     const m = mentionToken(v, this.ta.selectionStart);
     if (m) {
       this.mentionSpan = m;
+      const specials = [
+        { label: "@diff", hint: "현재 변경사항", special: "diff" },
+        { label: "@terminal", hint: "최근 셸 출력", special: "terminal" },
+        ...(this.card.specName ? [{ label: "@spec", hint: "스펙 파일", value: mentionFor(this.card.adapter?.mention, this.card.specName) }] : []),
+      ].filter((s) => s.label.slice(1).includes(m.query.toLowerCase()));
       const files = await this.card.fileList();
       if (this.ta.value !== v) return; // input changed while loading
       const hits = fuzzyFilter(files, m.query).slice(0, 12);
       return this.showSlash(
-        hits.map((path) => ({ label: path, hint: "@파일", value: mentionFor(this.card.adapter?.mention, path) })),
+        [...specials, ...hits.map((path) => ({ label: path, hint: "@파일", value: mentionFor(this.card.adapter?.mention, path) }))],
         "mention",
       );
     }
@@ -259,17 +277,27 @@ export class Composer {
     lis[this.sel].scrollIntoView({ block: "nearest" });
   }
 
-  pick() {
+  async pick() {
     const item = this.menuItems[this.sel];
     if (item) {
+      let val = item.value ?? "";
+      if (item.special === "diff") {
+        const d = await invoke("git_diff", { root: this.card.root }).catch(() => "");
+        val = d ? `\n\`\`\`diff\n${d.slice(0, 4000)}\n\`\`\`\n` : "";
+      } else if (item.special === "terminal") {
+        const lines = this.card.shell?.lastLines(25, true) ?? [];
+        val = lines.length ? `\n\`\`\`\n${lines.join("\n")}\n\`\`\`\n` : "";
+      }
       if (this.menuMode === "mention" && this.mentionSpan) {
         const { start, end } = this.mentionSpan;
-        const val = this.ta.value;
-        this.ta.value = val.slice(0, start) + item.value + " " + val.slice(end).replace(/^\s*/, "");
-        const pos = start + item.value.length + 1;
+        const cur = this.ta.value;
+        this.ta.value = cur.slice(0, start) + val + " " + cur.slice(end).replace(/^\s*/, "");
+        const pos = start + val.length + 1;
         this.ta.setSelectionRange(pos, pos);
       } else {
-        this.ta.value = item.value;
+        const branch = this.card.explorer?.curBranch ?? "";
+        const sel = this.card.viewer?.isOpen && this.card.viewer?.rel ? mentionFor(this.card.adapter?.mention, this.card.viewer.rel, this.card.viewer.selectionRange()) : "";
+        this.ta.value = val.replaceAll("{branch}", branch).replaceAll("{selection}", sel);
       }
     }
     this.slash.hidden = true;
@@ -359,7 +387,8 @@ export class Composer {
     }
     if (this.history.at(-1) !== text) {
       this.history.push(text);
-      if (this.history.length > 30) this.history.shift();
+      if (this.history.length > 50) this.history.shift();
+      saveJson(HIST_KEY, this.history);
     }
     this.histIdx = -1;
     this.ta.value = "";
@@ -400,6 +429,23 @@ export class Composer {
       row.className = "q-item";
       const txt = document.createElement("span");
       txt.textContent = `${i + 1}. ${x.text}`;
+      const up = document.createElement("button");
+      up.type = "button";
+      up.textContent = "↑";
+      up.title = "위로";
+      up.disabled = i === 0;
+      up.onclick = () => { [q[i - 1], q[i]] = [q[i], q[i - 1]]; this.renderQueue(); };
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "✎";
+      edit.title = "입력창으로 꺼내 수정";
+      edit.onclick = () => {
+        q.splice(i, 1);
+        this.ta.value = x.raw ?? x.text;
+        this.renderQueue();
+        this.update();
+        this.ta.focus();
+      };
       const del = document.createElement("button");
       del.type = "button";
       del.textContent = "×";
@@ -408,7 +454,7 @@ export class Composer {
         q.splice(i, 1);
         this.renderQueue();
       };
-      row.append(txt, del);
+      row.append(txt, up, edit, del);
       this.queuePop.append(row);
     });
     const clr = document.createElement("button");

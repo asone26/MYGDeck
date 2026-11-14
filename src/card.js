@@ -16,18 +16,20 @@ const TEMPLATE = `
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
   <span class="badge"></span><span class="stext"></span><span class="b-conflict" hidden></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
   <button class="b-perm" title="권한 승인 모드 전환 (확인 / 자동허용)"></button>
+  <button class="b-pin" title="카드 맨 앞에 고정">📌</button>
   <button class="b-mute" title="알림 끄기/켜기"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
   <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
 </div>
+<div class="conn-banner" hidden><span>세션 연결이 끊어졌습니다.</span><button type="button" class="conn-retry">다시 연결</button></div>
 <div class="mods">
   <details class="m-files"><summary>${icon(ICONS.FolderTree)}파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>${icon(ICONS.FileText)}스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
   <details class="m-note"><summary>메모</summary><textarea class="note-ta" rows="4" placeholder="이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…"></textarea></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
-<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button></div>
+<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><div class="shell-bar"><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button><button class="shell-clear" title="터미널 화면 지우기">지우기</button><span class="shell-scripts"></span></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>
@@ -77,6 +79,10 @@ export class Card {
       this.app.save();
     };
     this.syncMute();
+    this.pinBtn = this.$(".b-pin");
+    this.pinBtn.onclick = () => this.togglePin();
+    this.syncPin();
+    this.$(".conn-retry").onclick = () => this.restart();
     this.permBtn = this.$(".b-perm");
     this.autoApprove = !!cfg.auto_approve;
     this.permBtn.onclick = () => this.toggleAutoApprove();
@@ -116,6 +122,7 @@ export class Card {
       command: this.launchCommand(),
       onOutput: () => this.onOutput(),
       onExit: (code, err) => this.onExit(code, err),
+      onFileLink: (rel, line) => this.viewer.open(rel, "code", line),
     });
     // Keep the elapsed time ("1분 12초") ticking while the agent works, without rebuilding the view.
     this.clock = setInterval(() => {
@@ -228,11 +235,26 @@ export class Card {
     this.muteBtn.title = muted ? "알림 꺼짐 · 클릭하면 다시 켜기" : "이 카드 알림 끄기";
   }
 
+  syncPin() {
+    const pinned = !!this.cfg.pinned;
+    this.pinBtn?.classList.toggle("on", pinned);
+    this.el.classList.toggle("pinned", pinned);
+    if (this.pinBtn) this.pinBtn.title = pinned ? "고정 해제" : "카드 맨 앞에 고정";
+  }
+
+  togglePin() {
+    this.cfg.pinned = !this.cfg.pinned || undefined;
+    this.syncPin();
+    this.app.onPinChange?.(this);
+  }
+
   setStatus(status, text) {
     const prev = this.status;
     Object.assign(this, { status, statusText: text });
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
+    const banner = this.$(".conn-banner");
+    if (banner) banner.hidden = status !== "exited";
     // Idle/done need no header badge or text; the GUI view already says so.
     const shown = status === "idle" || status === "done" ? "" : text;
     const badge = this.$(".badge");
@@ -452,7 +474,13 @@ export class Card {
       await invoke("git_worktree_merge", { root: this.root });
       message("원래 폴더에 합쳤습니다. 이 worktree는 이제 버려도 됩니다.", { kind: "info" });
     } catch (e) {
-      message(`합치지 못했습니다: ${e}`, { kind: "error" });
+      const msg = String(e);
+      if (/겹쳐서|conflict/i.test(msg)) {
+        const delegate = await ask(`합치지 못했습니다:\n${msg}\n\n에이전트에게 원래 브랜치와의 충돌 해결을 요청할까요?`, { title: "병합 충돌", kind: "warning", okLabel: "에이전트에 요청", cancelLabel: "닫기" });
+        if (delegate) this.composer.insert(`원래 폴더 브랜치와 worktree 병합 중 충돌이 발생했습니다. 변경 내용을 확인하고 충돌이 없도록 정리해줘:\n\`\`\`\n${msg.slice(0, 1200)}\n\`\`\`\n`);
+      } else {
+        message(`합치지 못했습니다: ${msg}`, { kind: "error" });
+      }
     }
   }
 
@@ -546,7 +574,7 @@ export class Card {
     if (event === "prompt") {
       // Subagent reports and task notices reach the agent as prompts: it keeps working on the same request.
       const notice = isAgentNotice(data?.prompt);
-      if (!notice && (this.turnAsk || this.turn?.texts?.length)) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [] }].slice(-50);
+      if (!notice && (this.turnAsk || this.turn?.texts?.length)) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [], checkpoint: this.turnCheckpoint }].slice(-50);
       this.turnSeq = (this.turnSeq ?? 0) + 1;
       this.turnTools = [];
       this.turnStart = Date.now();
@@ -930,14 +958,14 @@ export class Card {
     setTimeout(() => this.agent.write("\r"), 80);
   }
 
-  /** Restore tracked files to the snapshot captured before the last agent turn. */
-  async restoreCheckpoint() {
-    if (!this.turnCheckpoint) return message("복원할 이전 턴 체크포인트가 없습니다.", { kind: "info" });
-    const ok = await ask(`${this.name}: 마지막 지시 직전의 git 상태로 되돌릴까요?`, { title: "체크포인트 복원", kind: "warning", okLabel: "되돌리기", cancelLabel: "취소" });
+  /** Restore tracked files to the snapshot captured before a turn. */
+  async restoreCheckpoint(rev = this.turnCheckpoint) {
+    if (!rev) return message("복원할 이전 턴 체크포인트가 없습니다.", { kind: "info" });
+    const ok = await ask(`${this.name}: 해당 지시 직전의 git 상태로 되돌릴까요?`, { title: "체크포인트 복원", kind: "warning", okLabel: "되돌리기", cancelLabel: "취소" });
     if (!ok) return;
     try {
-      await invoke("git_checkpoint_restore", { root: this.root, rev: this.turnCheckpoint });
-      this.turnCheckpoint = null;
+      await invoke("git_checkpoint_restore", { root: this.root, rev });
+      if (rev === this.turnCheckpoint) this.turnCheckpoint = null;
       this.explorer.refresh();
       this.viewer.reload();
     } catch (e) {
@@ -949,7 +977,27 @@ export class Card {
     const box = this.$(".shell");
     if (!this.shell) {
       box.hidden = false;
-      this.shell = new Pty(box, { key: `${this.root}#shell`, cwd: this.root, command: this.app.shell, scrollback: 2000 });
+      this.$(".shell-clear").onclick = () => this.shell?.clear();
+      invoke("read_project_scripts", { root: this.root }).then((scripts) => {
+        const host = this.$(".shell-scripts");
+        if (!host) return;
+        host.textContent = "";
+        for (const s of scripts) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = s;
+          b.title = `npm run ${s} 실행`;
+          b.onclick = () => { this.shell?.write(`npm run ${s}\r`); this.shell?.term.focus(); };
+          host.append(b);
+        }
+      }).catch(() => {});
+      this.shell = new Pty(box, {
+        key: `${this.root}#shell`,
+        cwd: this.root,
+        command: this.app.shell,
+        scrollback: 2000,
+        onFileLink: (rel, line) => this.viewer.open(rel, "code", line),
+      });
       requestAnimationFrame(async () => {
         const live = this.app.takeLive(this.shell.key);
         if (!(live && (await this.shell.attach(live.id)))) this.shell.start();

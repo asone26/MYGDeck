@@ -1,7 +1,9 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ghostSuggestion, isDeckKey } from "./logic.js";
 
 // keep in sync with --panel / --fg in style.css
@@ -46,8 +48,8 @@ export const ptys = new Map();
  * The process lives in the session daemon: `key` (project + role) lets a reopened window find it again.
  */
 export class Pty {
-  constructor(host, { key, cwd, command, onOutput, onExit, scrollback = 5000 }) {
-    Object.assign(this, { host, key, cwd, command, onOutput, onExit, alive: false });
+  constructor(host, { key, cwd, command, onOutput, onExit, onFileLink, scrollback = 5000 }) {
+    Object.assign(this, { host, key, cwd, command, onOutput, onExit, onFileLink, alive: false });
     this.term = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, Menlo, 'D2Coding', monospace",
       fontSize: FONT_SIZE,
@@ -59,8 +61,11 @@ export class Pty {
     });
     terms.add(this.term);
     this.fit = new FitAddon();
+    this.search = new SearchAddon();
     this.term.loadAddon(this.fit);
+    this.term.loadAddon(this.search);
     this.term.open(host);
+    this.registerLinks();
     this.covered = false;
     this.useGl();
     this.term.attachCustomKeyEventHandler((e) => !isDeckKey(e));
@@ -178,6 +183,43 @@ export class Pty {
     ptys.delete(this.id);
     this.term.write(`\r\n\x1b[90m[종료됨${code == null ? "" : ` · 코드 ${code}`}]\x1b[0m\r\n`);
     this.onExit?.(code);
+  }
+
+  registerLinks() {
+    const LINK_RE = /(https?:\/\/[^\s<>"'`)\]]+)|((?:[a-zA-Z0-9_.-]+[\\/])+[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8}(?::(\d+))?)/g;
+    this.term.registerLinkProvider({
+      provideLinks: (y, cb) => {
+        const line = this.term.buffer.active.getLine(y - 1)?.translateToString(true);
+        if (!line) return cb(undefined);
+        const links = [];
+        LINK_RE.lastIndex = 0;
+        for (let m; (m = LINK_RE.exec(line)); ) {
+          const text = m[0];
+          const startX = m.index + 1;
+          const endX = startX + text.length - 1;
+          if (m[1]) {
+            links.push({ range: { start: { x: startX, y }, end: { x: endX, y } }, text, activate: () => openUrl(m[1]).catch(() => {}) });
+          } else if (m[2] && this.onFileLink) {
+            const rel = m[2].replace(/:\d+$/, "").replaceAll("\\", "/");
+            const ln = m[3] ? Number(m[3]) : null;
+            links.push({ range: { start: { x: startX, y }, end: { x: endX, y } }, text, activate: () => this.onFileLink(rel, ln) });
+          }
+        }
+        cb(links.length ? links : undefined);
+      },
+    });
+  }
+
+  findNext(query, back = false) {
+    if (!query) {
+      this.search.clearDecorations();
+      return false;
+    }
+    return back ? this.search.findPrevious(query) : this.search.findNext(query);
+  }
+
+  clear() {
+    this.term.clear();
   }
 
   /** Last non-empty screen lines, for compact cards and the overview. */

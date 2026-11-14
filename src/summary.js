@@ -1,7 +1,11 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { keyLabel, permissionLine, replySuggestions, suggestsClear, timeline } from "./logic.js";
 import { statusIcon } from "./icons.js";
+
+let hljsLoad = null;
+const loadHljs = () => (hljsLoad ??= import("highlight.js/lib/common").then((m) => m.default));
 
 const STATE = {
   idle: ["💬", "준비됨"],
@@ -64,6 +68,21 @@ export function renderSummary(card, box) {
     past.dataset.turn = idx;
     if (h.ask) past.append(el("div", "s-ask", h.ask));
     if (h.texts.length) past.append(answer(h.texts, card));
+    if (h.texts.length || h.checkpoint) {
+      const bar = el("div", "s-past-bar");
+      if (h.texts.length) {
+        const cb = button("복사", async () => {
+          await navigator.clipboard.writeText(h.texts.join("\n\n")).catch(() => {});
+          cb.textContent = "복사됨 ✓";
+          setTimeout(() => { if (cb.isConnected) cb.textContent = "복사"; }, 1200);
+        });
+        bar.append(cb);
+      }
+      if (h.checkpoint) {
+        bar.append(button("이 턴 직전으로 복구", () => card.restoreCheckpoint(h.checkpoint), "s-restore"));
+      }
+      past.append(bar);
+    }
     box.append(past);
   });
   renderCurrent(card, box, st);
@@ -235,7 +254,12 @@ const FILE_REF_RE = /^(?:[\w.-]+\/)*[\w.-]+\.[a-z0-9]{1,8}(?::\d+(?::\d+)?|#L\d+
 function answer(texts, card = null) {
   const ans = el("div", "s-answer md");
   ans.innerHTML = DOMPurify.sanitize(marked.parse(texts.join("\n\n")));
-  ans.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
+  ans.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a) return;
+    e.preventDefault();
+    if (/^https?:\/\//i.test(a.href)) openUrl(a.href).catch(() => {});
+  });
   if (card?.viewer) {
     for (const code of ans.querySelectorAll("code")) {
       if (code.closest("pre")) continue;
@@ -253,15 +277,37 @@ function answer(texts, card = null) {
     }
   }
   for (const pre of ans.querySelectorAll("pre")) {
+    const codeEl = pre.querySelector("code");
+    const langMatch = codeEl?.className.match(/language-([\w-]+)/);
+    if (codeEl && langMatch) {
+      loadHljs().then((hljs) => {
+        if (codeEl.isConnected && hljs.getLanguage(langMatch[1])) {
+          codeEl.innerHTML = hljs.highlight(codeEl.textContent, { language: langMatch[1], ignoreIllegals: true }).value;
+          codeEl.classList.add("hljs");
+        }
+      });
+    }
+    const actions = el("div", "code-acts");
     const btn = el("button", "code-copy", "복사");
     btn.type = "button";
     btn.onclick = async () => {
-      const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
+      const code = codeEl?.textContent ?? pre.textContent ?? "";
       await navigator.clipboard.writeText(code).catch(() => {});
       btn.textContent = "복사됨";
       setTimeout(() => { if (btn.isConnected) btn.textContent = "복사"; }, 1400);
     };
-    pre.append(btn);
+    actions.append(btn);
+    if (card?.composer) {
+      const quote = el("button", "code-quote", "인용");
+      quote.type = "button";
+      quote.title = "입력창에 코드 블록 넣기";
+      quote.onclick = () => {
+        const code = codeEl?.textContent ?? pre.textContent ?? "";
+        card.composer.insert(`\n\`\`\`\n${code.trimEnd()}\n\`\`\`\n`);
+      };
+      actions.append(quote);
+    }
+    pre.append(actions);
   }
   return ans;
 }

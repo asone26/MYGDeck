@@ -4,7 +4,10 @@ import { keyLabel, lineRange, mentionFor, parseDiff, addedRows, formatReviewComm
 // Syntax highlighting is the largest dependency; load it only when a file is first opened.
 let hljsLoad = null;
 const loadHljs = () => (hljsLoad ??= import("highlight.js/lib/common").then((m) => m.default));
+let mdLoad = null;
+const loadMd = () => (mdLoad ??= Promise.all([import("marked"), import("dompurify")]).then(([m, d]) => ({ marked: m.marked, purify: d.default })));
 
+const IMG_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
 const HIGHLIGHT_LIMIT = 300_000;
 const DIFF_ROWS = 5000;
 const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -23,19 +26,34 @@ export class Viewer {
           <span class="vnav"><button class="v-prev" title="이전 변경 파일 ([)">‹</button><span class="vpos"></span><button class="v-next" title="다음 변경 파일 (])">›</button></span>
           <span class="vnav"><button class="v-hprev" title="이전 변경 블록">▲</button><button class="v-hnext" title="다음 변경 블록">▼</button></span>
           <button class="v-split" title="나란히(2열) 비교 보기">나란히</button>
+          <button class="v-ws" title="공백 변경 무시">공백무시</button>
           <button class="v-revert"></button>
         </span>
+        <button class="v-md" title="마크다운 미리보기/원문 전환" hidden>미리보기</button>
+        <button class="v-find-btn" title="파일 내 검색 / 줄 이동 (Ctrl+F)">검색</button>
         <button class="v-rev-send" title="작성한 리뷰 코멘트를 입력창에 넣기" hidden></button>
         <button class="v-ins" title="${keyLabel("선택한 코드를 입력창에 넣기 (Ctrl+I)")}">@<span class="vl"> 입력창에 넣기</span></button>
         <button class="v-close" title="닫기 (Esc)">×</button></div>
-      <div class="vbody"><pre class="gutter"></pre><pre class="code"><code class="hljs"></code></pre><div class="vdiff" hidden></div></div>`;
+      <div class="vfind" hidden><input class="vf-in" placeholder="검색어 또는 :줄번호…" spellcheck="false"><span class="vf-cnt"></span><button class="vf-prev" title="이전">▲</button><button class="vf-next" title="다음">▼</button><button class="vf-x" title="닫기">×</button></div>
+      <div class="vnotice" hidden></div>
+      <div class="vbody"><pre class="gutter"></pre><pre class="code"><code class="hljs"></code></pre><div class="vdiff" hidden></div><div class="vmd md" hidden></div><div class="vimg" hidden><img></div></div>`;
     this.code = el.querySelector("code");
     this.gutter = el.querySelector(".gutter");
     this.body = el.querySelector(".vbody");
     this.diff = el.querySelector(".vdiff");
+    this.mdBox = el.querySelector(".vmd");
+    this.imgBox = el.querySelector(".vimg");
+    this.notice = el.querySelector(".vnotice");
+    this.mdBtn = el.querySelector(".v-md");
     this.revertBtn = el.querySelector(".v-revert");
     this.mode = "code";
     this.splitMode = false;
+    this.ignoreWs = false;
+    this.mdPreview = false;
+    this.forceHighlight = false;
+    this.findBar = el.querySelector(".vfind");
+    this.findIn = el.querySelector(".vf-in");
+    this.findCnt = el.querySelector(".vf-cnt");
     el.querySelector(".vseg").onclick = (e) => e.target.dataset.v && this.setMode(e.target.dataset.v);
     el.querySelector(".v-prev").onclick = () => this.step(-1);
     el.querySelector(".v-next").onclick = () => this.step(1);
@@ -45,6 +63,25 @@ export class Viewer {
       this.splitMode = !this.splitMode;
       e.currentTarget.classList.toggle("on", this.splitMode);
       this.diff.classList.toggle("split", this.splitMode);
+    };
+    el.querySelector(".v-ws").onclick = (e) => {
+      this.ignoreWs = !this.ignoreWs;
+      e.currentTarget.classList.toggle("on", this.ignoreWs);
+      if (this.mode === "diff") this.load(true);
+    };
+    this.mdBtn.onclick = () => {
+      this.mdPreview = !this.mdPreview;
+      this.mdBtn.classList.toggle("on", this.mdPreview);
+      this.load(false);
+    };
+    el.querySelector(".v-find-btn").onclick = () => this.toggleFind(true);
+    el.querySelector(".vf-prev").onclick = () => this.stepFind(-1);
+    el.querySelector(".vf-next").onclick = () => this.stepFind(1);
+    el.querySelector(".vf-x").onclick = () => this.toggleFind(false);
+    this.findIn.oninput = () => this.runFind();
+    this.findIn.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); this.stepFind(ev.shiftKey ? -1 : 1); }
+      else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); this.toggleFind(false); }
     };
     this.revertBtn.onclick = () => this.revert();
     this.revSendBtn = el.querySelector(".v-rev-send");
@@ -57,6 +94,10 @@ export class Viewer {
       if (e.key === "Escape") {
         e.stopPropagation();
         this.close();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleFind(true);
       } else if ((e.key === "[" || e.key === "]") && !e.ctrlKey && !e.metaKey && !e.altKey && this.changed().length) {
         e.preventDefault();
         this.step(e.key === "]" ? 1 : -1);
@@ -141,6 +182,8 @@ export class Viewer {
   /** mode "diff" opens the review view when the file has changes; a deleted file only has that view. */
   async open(rel, mode = "code", line = null) {
     this.allDiffs = false;
+    this.commitRev = null;
+    this.forceHighlight = false;
     this.rel = rel;
     this.targetLine = line ? Number(line) : null;
     const code = this.card.explorer.status.get(rel);
@@ -151,12 +194,25 @@ export class Viewer {
     this.el.focus();
   }
 
+  /** View a historical commit's diff from the Explorer commit log. */
+  async openCommitDiff(hash, subject) {
+    this.allDiffs = false;
+    this.commitRev = hash;
+    this.rel = hash;
+    this.mode = "diff";
+    this.el.hidden = false;
+    this.el.querySelector(".vpath").textContent = `${hash} · ${subject}`;
+    await this.load(false);
+    this.el.focus();
+  }
+
   /** Stacked diff view for all changed files in one scrollable panel. */
   async openAllDiffs() {
     const list = this.changed();
     if (!list.length) return;
     if (list.length === 1) return this.open(list[0], "diff");
     this.allDiffs = true;
+    this.commitRev = null;
     this.rel = null;
     this.mode = "diff";
     this.el.hidden = false;
@@ -174,33 +230,73 @@ export class Viewer {
     const left = this.body.scrollLeft;
     const { root } = this.card;
     this.syncReview();
+    this.notice.hidden = true;
+    const ext = (this.rel ?? "").split(".").pop().toLowerCase();
+    const isMd = this.mode === "code" && ext === "md";
+    const isImg = this.mode === "code" && IMG_EXTS.has(ext);
+    this.mdBtn.hidden = !isMd;
     const diff = this.mode === "diff";
+    const showMd = isMd && this.mdPreview;
     this.diff.hidden = !diff;
-    this.gutter.hidden = this.code.parentElement.hidden = diff;
+    this.mdBox.hidden = !showMd;
+    this.imgBox.hidden = !isImg;
+    this.gutter.hidden = this.code.parentElement.hidden = diff || showMd || isImg;
     if (diff) {
-      if (this.allDiffs) await this.loadAllDiffs();
+      if (this.commitRev) await this.loadCommitDiff();
+      else if (this.allDiffs) await this.loadAllDiffs();
       else await this.loadDiff();
       this.body.scrollTop = keepScroll ? top : 0;
       this.body.scrollLeft = keepScroll ? left : 0;
       return;
     }
     this.el.querySelector(".vstat").textContent = "";
+    if (isImg) {
+      try {
+        const src = await invoke("read_file_base64", { root, rel: this.rel });
+        this.imgBox.querySelector("img").src = src;
+      } catch (e) {
+        this.imgBox.hidden = true;
+        this.code.parentElement.hidden = false;
+        this.code.textContent = `이미지를 열 수 없습니다: ${e}`;
+      }
+      return;
+    }
     try {
       const [text, changed, hljs] = await Promise.all([
         invoke("read_file", { root, rel: this.rel }),
         invoke("changed_lines", { root, rel: this.rel }).catch(() => ({ all: false, lines: [] })),
         loadHljs(),
       ]);
-      this.render(text, changed, hljs);
+      this.lastText = text;
+      if (showMd) {
+        const { marked, purify } = await loadMd();
+        this.mdBox.innerHTML = purify.sanitize(marked.parse(text));
+      } else {
+        this.render(text, changed, hljs);
+      }
     } catch (e) {
       this.code.textContent = `열 수 없습니다: ${e}`;
       this.gutter.textContent = "";
     }
     this.body.scrollTop = keepScroll ? top : 0;
     if (!keepScroll && this.targetLine) {
-      const lh = parseFloat(getComputedStyle(this.code).lineHeight) || 19;
-      this.body.scrollTop = Math.max(0, (this.targetLine - 4) * lh);
+      this.scrollToLine(this.targetLine);
       this.targetLine = null;
+    }
+  }
+
+  scrollToLine(line) {
+    const lh = parseFloat(getComputedStyle(this.code).lineHeight) || 19;
+    this.body.scrollTop = Math.max(0, (line - 4) * lh);
+  }
+
+  async loadCommitDiff() {
+    const { root } = this.card;
+    try {
+      const [raw, hljs] = await Promise.all([invoke("git_commit_diff", { root, rev: this.commitRev }), loadHljs()]);
+      this.renderDiff(parseDiff(raw), hljs);
+    } catch (e) {
+      this.diff.innerHTML = `<div class="dl meta"><span class="dt">커밋을 불러올 수 없습니다: ${esc(String(e))}</span></div>`;
     }
   }
 
@@ -211,7 +307,7 @@ export class Viewer {
     let hljs;
     let untracked = false;
     try {
-      const d = await invoke("file_diff", { root, rel });
+      const d = await invoke("file_diff", { root, rel, ignoreWs: this.ignoreWs });
       hljs = await loadHljs();
       untracked = !!d.untracked;
       rows = untracked ? addedRows(await invoke("read_file", { root, rel })) : parseDiff(d.diff);
@@ -235,7 +331,7 @@ export class Viewer {
     const hljs = await loadHljs();
     const entries = await Promise.all(list.map(async (rel) => {
       try {
-        const d = await invoke("file_diff", { root, rel });
+        const d = await invoke("file_diff", { root, rel, ignoreWs: this.ignoreWs });
         const untracked = !!d.untracked;
         const rows = untracked ? addedRows(await invoke("read_file", { root, rel })) : parseDiff(d.diff);
         return { rel, rows, untracked };
@@ -401,10 +497,20 @@ export class Viewer {
 
   render(text, changed, hljs) {
     const ext = this.rel.split(".").pop().toLowerCase();
-    if (hljs.getLanguage(ext) && text.length < HIGHLIGHT_LIMIT) {
+    const canHl = hljs.getLanguage(ext);
+    const overLimit = text.length >= HIGHLIGHT_LIMIT && !this.forceHighlight;
+    if (canHl && !overLimit) {
       this.code.innerHTML = hljs.highlight(text, { language: ext, ignoreIllegals: true }).value;
     } else {
       this.code.textContent = text;
+      if (canHl && overLimit) {
+        this.notice.hidden = false;
+        this.notice.innerHTML = `파일이 커서(${Math.round(text.length / 1024)} KB) 구문 강조를 껐습니다. <button type="button">구문 강조 켜기</button>`;
+        this.notice.querySelector("button").onclick = () => {
+          this.forceHighlight = true;
+          this.load(true);
+        };
+      }
     }
     const marked = new Set(changed.lines);
     const n = text.split("\n").length;
@@ -431,6 +537,52 @@ export class Viewer {
   insertSelection() {
     if (!this.isOpen) return;
     this.card.composer.insert(mentionFor(this.card.adapter?.mention, this.rel, this.selectionRange()));
+  }
+
+  toggleFind(open) {
+    this.findBar.hidden = !open;
+    if (open) {
+      this.findIn.focus();
+      this.findIn.select();
+      this.runFind();
+    } else {
+      this.findMatches = [];
+      this.findCnt.textContent = "";
+      this.el.focus();
+    }
+  }
+
+  runFind() {
+    const raw = this.findIn.value.trim();
+    this.findMatches = [];
+    this.findIdx = 0;
+    if (!raw) { this.findCnt.textContent = ""; return; }
+    if (/^:\d+$/.test(raw)) {
+      const ln = Number(raw.slice(1));
+      this.findCnt.textContent = `L${ln}`;
+      this.scrollToLine(ln);
+      return;
+    }
+    const q = raw.toLowerCase();
+    if (this.mode === "diff") {
+      this.findMatches = [...this.diff.querySelectorAll(".dl .dt")].filter((el) => el.textContent.toLowerCase().includes(q));
+      this.findCnt.textContent = this.findMatches.length ? `1/${this.findMatches.length}` : "0건";
+      this.findMatches[0]?.scrollIntoView({ block: "center" });
+      return;
+    }
+    const lines = (this.lastText ?? "").split("\n");
+    lines.forEach((l, i) => { if (l.toLowerCase().includes(q)) this.findMatches.push(i + 1); });
+    this.findCnt.textContent = this.findMatches.length ? `1/${this.findMatches.length}` : "0건";
+    if (this.findMatches.length) this.scrollToLine(this.findMatches[0]);
+  }
+
+  stepFind(dir) {
+    if (!this.findMatches?.length) return;
+    this.findIdx = (this.findIdx + dir + this.findMatches.length) % this.findMatches.length;
+    this.findCnt.textContent = `${this.findIdx + 1}/${this.findMatches.length}`;
+    const hit = this.findMatches[this.findIdx];
+    if (typeof hit === "number") this.scrollToLine(hit);
+    else hit.scrollIntoView({ block: "center" });
   }
 
   close() {

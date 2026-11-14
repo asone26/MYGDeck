@@ -518,10 +518,12 @@ fn handle(hub: &Arc<Hub>, token: &str, stream: TcpStream) {
                 let files = crate::fsx::git_status(cwd.clone());
                 let rel = q("file");
                 let target = if !rel.is_empty() { Some(rel) } else { files.first().map(|f| f.path.clone()) };
-                let diff = target.as_deref().and_then(|p| crate::fsx::file_diff(cwd.clone(), p.to_string()).ok());
-                Ok(json!({ "stat": stat, "files": files, "file": target, "diff": diff }))
+                let diff = target.as_deref().and_then(|p| crate::fsx::file_diff(cwd.clone(), p.to_string(), None).ok());
+                let commits = crate::fsx::git_log(cwd, Some(5));
+                Ok(json!({ "stat": stat, "files": files, "file": target, "diff": diff, "commits": commits }))
             }),
         ),
+        ("GET", "/api/doctor") => json_reply(s, Ok(serde_json::to_value(crate::fsx::doctor_check()).unwrap_or(Value::Null))),
         // New output since an offset: the phone polls (a relay need not carry event streams).
         ("GET", "/api/screen") => json_reply(
             s,

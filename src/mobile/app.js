@@ -560,6 +560,18 @@ class Detail {
       const d = await api(`/api/diff?id=${encodeURIComponent(this.id)}${q}`);
       if (!d.files?.length) {
         box.innerHTML = `<p class="muted">변경된 파일이 없습니다.</p>`;
+        if (d.commits?.length) {
+          const log = document.createElement("div");
+          log.className = "mdiff-log";
+          log.innerHTML = `<div class="muted" style="margin:10px 0 4px">최근 커밋</div>`;
+          for (const c of d.commits) {
+            const r = document.createElement("div");
+            r.className = "mdiff-c";
+            r.textContent = `${c.hash} · ${c.subject} (${c.when})`;
+            log.append(r);
+          }
+          box.append(log);
+        }
         return;
       }
       const stat = d.stat ? `<div class="mdiff-stat"><span class="a">+${d.stat.added}</span> <span class="d">−${d.stat.removed}</span> · ${d.files.length}개 파일</div>` : "";

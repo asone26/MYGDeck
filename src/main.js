@@ -35,6 +35,13 @@ const app = {
   onStatus,
   onTestFail,
   updateConflicts,
+  onPinChange: (card) => {
+    app.cards.sort((a, b) => (b.cfg.pinned ? 1 : 0) - (a.cfg.pinned ? 1 : 0));
+    app.active = Math.max(0, app.cards.indexOf(card));
+    renderStrip();
+    layout();
+    save();
+  },
   onPeek: () => overlayKind === "overview" && renderOverview(),
 };
 
@@ -457,20 +464,31 @@ function toggleOverview() {
   renderOverview();
 }
 
+let ovFilter = "";
+
 /** Ctrl+0: every project as a tile on one screen (spec 3.0 ⑦). */
 function renderOverview() {
   // Rebuilt on every peek and key press: only the first build plays the entrance.
-  overlay.classList.toggle("still", !!overlay.querySelector(".ov"));
-  overlay.innerHTML = `<div class="ov"><div class="ov-title">전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기</div><div class="ov-grid"></div></div>`;
+  const first = !overlay.querySelector(".ov");
+  overlay.classList.toggle("still", !first);
+  if (first) {
+    ovFilter = "";
+    overlay.innerHTML = `<div class="ov"><div class="ov-head"><div class="ov-title">전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기</div><input class="ov-filter" placeholder="프로젝트 이름 필터…" spellcheck="false"></div><div class="ov-grid"></div></div>`;
+    const fin = overlay.querySelector(".ov-filter");
+    fin.oninput = () => { ovFilter = fin.value.trim().toLowerCase(); renderOverview(); };
+    fin.focus();
+  }
   const grid = overlay.querySelector(".ov-grid");
-  app.cards.forEach((c, i) => {
+  grid.textContent = "";
+  const shown = app.cards.map((c, i) => ({ c, i })).filter(({ c }) => !ovFilter || c.name.toLowerCase().includes(ovFilter));
+  shown.forEach(({ c, i }) => {
     const t = document.createElement("button");
     t.className = "tile" + (i === overviewSel ? " on" : "");
     t.dataset.status = c.status;
     t.style.setProperty("--pc", c.color);
     t.style.setProperty("--i", i);
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
-    t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
+    t.querySelector("b").textContent = `${c.cfg.pinned ? "📌 " : ""}#${i + 1} ${c.name}`;
     t.querySelector(".cb").innerHTML = statusIcon(c.status);
     const statText = c.stats?.turns ? ` · ${c.stats.turns}턴 (${Math.max(1, Math.round(c.stats.totalMs / 60000))}분)` : "";
     t.querySelector(".tt").textContent = `${c.statusText}${statText}`;
@@ -655,6 +673,8 @@ function openPalette() {
     { label: "글자 크기 기본 (14px)", hint: "초기화", run: () => applyFontSize(14) },
     { label: "모바일 대시보드 연결 안내", hint: "원격", run: openMobileGuide },
     { label: "AI 연결 설정", hint: "모델", run: () => $("conn-btn").click() },
+    { label: "환경 진단 (CLI · Git · 도구 점검)", hint: "Doctor", run: openDoctor },
+    { label: "통합 설정 (테마 · 글자 · 알림)", hint: "설정", run: openDeckSettings },
     { label: "테마 바꾸기 (다크 / 밝게 / 시스템)", hint: "테마", run: cycleTheme },
     { label: `알림 효과음 ${localStorage.getItem("mygdeck-sound") === "off" ? "켜기" : "끄기"}`, hint: "오디오", run: () => localStorage.setItem("mygdeck-sound", localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off") },
     { label: "키보드 단축키 보기", hint: "도움말", run: openShortcuts },
@@ -785,7 +805,13 @@ function openFind() {
     document.body.append(bar);
     const input = bar.querySelector(".find-in");
     const hitsBox = bar.querySelector(".find-hits");
-    const run = (back = false) => input.value && window.find(input.value, false, back, true, false, false, false);
+    const run = (back = false) => {
+      const q = input.value;
+      if (!q) return;
+      const cur = app.cards[app.active];
+      const hitTerm = cur && (!cur.guiShown ? cur.agent?.findNext(q, back) : cur.shell && !cur.$(".shell")?.hidden ? cur.shell.findNext(q, back) : false);
+      if (!hitTerm) window.find(q, false, back, true, false, false, false);
+    };
     const renderHits = () => {
       const q = input.value.trim().toLowerCase();
       hitsBox.textContent = "";
@@ -814,14 +840,19 @@ function openFind() {
         hitsBox.append(b);
       }
     };
+    const closeFind = () => {
+      bar.hidden = true;
+      for (const c of app.cards) { c.agent?.findNext(""); c.shell?.findNext(""); }
+      app.cards[app.active]?.focusDefault();
+    };
     input.oninput = renderHits;
     input.onkeydown = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); bar.hidden = true; app.cards[app.active]?.focusDefault(); }
+      if (e.key === "Escape") { e.preventDefault(); closeFind(); }
       else if (e.key === "Enter") { e.preventDefault(); run(e.shiftKey); }
     };
     bar.querySelector(".find-prev").onclick = () => run(true);
     bar.querySelector(".find-next").onclick = () => run(false);
-    bar.querySelector(".find-x").onclick = () => { bar.hidden = true; app.cards[app.active]?.focusDefault(); };
+    bar.querySelector(".find-x").onclick = closeFind;
   }
   bar.hidden = false;
   const input = bar.querySelector(".find-in");
@@ -883,6 +914,69 @@ function openCodeSearch() {
     }
   };
   input.focus();
+}
+
+async function openDoctor() {
+  if (overlayKind === "doctor") return closeOverlay();
+  overlayKind = "doctor";
+  overlay.hidden = false;
+  const box = document.createElement("div");
+  box.className = "qo pal";
+  box.innerHTML = `<div class="qo-title">환경 진단 (Doctor)</div><div class="doc-list"><div class="muted">점검 중…</div></div>`;
+  overlay.replaceChildren(box);
+  const items = await invoke("doctor_check").catch(() => []);
+  const list = box.querySelector(".doc-list");
+  list.textContent = "";
+  for (const it of items) {
+    const row = document.createElement("div");
+    row.className = `doc-row ${it.ok ? "ok" : "bad"}`;
+    row.innerHTML = `<b>${it.ok ? "✓" : "✕"} ${it.name}</b><span></span>`;
+    row.querySelector("span").textContent = it.detail;
+    list.append(row);
+  }
+}
+
+const KEYS_STORE = "mygdeck.keys";
+const loadKeyOverrides = () => { try { return JSON.parse(localStorage.getItem(KEYS_STORE) || "{}"); } catch { return {}; } };
+
+function openDeckSettings() {
+  if (overlayKind === "deck-settings") return closeOverlay();
+  overlayKind = "deck-settings";
+  overlay.hidden = false;
+  const box = document.createElement("div");
+  box.className = "qo pal";
+  const soundOn = localStorage.getItem("mygdeck-sound") !== "off";
+  const ov = loadKeyOverrides();
+  box.innerHTML = `<div class="qo-title">통합 설정</div>
+    <div class="ds-grid">
+      <label><span>테마</span><button type="button" class="ds-theme">전환 (${document.documentElement.dataset.theme || "dark"})</button></label>
+      <label><span>글자 크기 (${fontSize}px)</span><span><button type="button" class="ds-fminus">-</button> <button type="button" class="ds-fplus">+</button></span></label>
+      <label><span>알림 효과음</span><button type="button" class="ds-sound">${soundOn ? "켜짐" : "꺼짐"}</button></label>
+      <label><span>커맨드 팔레트 단축키</span><button type="button" class="ds-remap" data-act="palette">${keyLabel(`Ctrl+${ov.palette || "K"}`)}</button></label>
+      <label><span>파일 빠른 열기 단축키</span><button type="button" class="ds-remap" data-act="quick">${keyLabel(`Ctrl+${ov.quick || "P"}`)}</button></label>
+      <label><span>전체 단축키 목록</span><button type="button" class="ds-keys">보기</button></label>
+    </div>`;
+  box.querySelector(".ds-theme").onclick = (e) => { cycleTheme(); e.target.textContent = `전환 (${document.documentElement.dataset.theme || "dark"})`; };
+  box.querySelector(".ds-fminus").onclick = () => { applyFontSize(fontSize - 1); box.querySelector(".ds-fminus").closest("label").firstElementChild.textContent = `글자 크기 (${fontSize}px)`; };
+  box.querySelector(".ds-fplus").onclick = () => { applyFontSize(fontSize + 1); box.querySelector(".ds-fplus").closest("label").firstElementChild.textContent = `글자 크기 (${fontSize}px)`; };
+  box.querySelector(".ds-sound").onclick = (e) => {
+    const next = localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off";
+    localStorage.setItem("mygdeck-sound", next);
+    e.target.textContent = next === "on" ? "켜짐" : "꺼짐";
+  };
+  for (const rb of box.querySelectorAll(".ds-remap")) {
+    rb.onclick = () => {
+      const ch = window.prompt("새 키 문자를 입력하세요 (A-Z, 기본값 복원은 빈칸):", "")?.trim().toUpperCase();
+      if (ch === undefined) return;
+      const cur = loadKeyOverrides();
+      if (!ch) delete cur[rb.dataset.act];
+      else if (/^[A-Z]$/.test(ch)) cur[rb.dataset.act] = ch;
+      localStorage.setItem(KEYS_STORE, JSON.stringify(cur));
+      rb.textContent = keyLabel(`Ctrl+${cur[rb.dataset.act] || (rb.dataset.act === "palette" ? "K" : "P")}`);
+    };
+  }
+  box.querySelector(".ds-keys").onclick = () => { closeOverlay(); openShortcuts(); };
+  overlay.replaceChildren(box);
 }
 
 function openShortcuts() {
@@ -947,10 +1041,17 @@ window.addEventListener(
       overviewSel = (overviewSel + step + app.cards.length) % app.cards.length;
       return renderOverview();
     }
+    const keyOv = loadKeyOverrides();
+    const quickCode = `Key${keyOv.quick || "P"}`;
+    const palCode = `Key${keyOv.palette || "K"}`;
     // Ctrl+P / Ctrl+F belong to the CLI while the terminal has focus (spec 3.3); ⌘P / ⌘F on macOS never reach it.
-    if (keyCode(e) === "KeyP" && isDeckMod(e, "KeyP") && (IS_MAC || !e.target.closest?.(".xterm"))) {
+    if (keyCode(e) === quickCode && isDeckMod(e, quickCode) && (IS_MAC || !e.target.closest?.(".xterm"))) {
       e.preventDefault();
       return quickOpen();
+    }
+    if (keyCode(e) === palCode && isDeckMod(e, palCode) && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      return openPalette();
     }
     if (keyCode(e) === "KeyF" && isDeckMod(e, "KeyF") && (IS_MAC || !e.target.closest?.(".xterm"))) {
       e.preventDefault();
