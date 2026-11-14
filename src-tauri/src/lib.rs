@@ -96,6 +96,8 @@ pub fn run() {
             fsx::git_diff,
             fsx::file_diff,
             fsx::git_discard,
+            fsx::git_discard_hunk,
+            fsx::run_shell_cmd,
             fsx::git_push,
             fsx::git_ahead,
             fsx::git_shortstat,

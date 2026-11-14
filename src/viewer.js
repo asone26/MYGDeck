@@ -163,14 +163,19 @@ export class Viewer {
     const rel = this.rel;
     let rows;
     let hljs;
+    let untracked = false;
     try {
       const d = await invoke("file_diff", { root, rel });
       hljs = await loadHljs();
-      rows = d.untracked ? addedRows(await invoke("read_file", { root, rel })) : parseDiff(d.diff);
+      untracked = !!d.untracked;
+      rows = untracked ? addedRows(await invoke("read_file", { root, rel })) : parseDiff(d.diff);
     } catch (e) {
       rows = [{ kind: "meta", text: `열 수 없습니다: ${e}` }];
     }
-    if (rel === this.rel && this.mode === "diff") this.renderDiff(rows, hljs); // else switched while loading
+    if (rel === this.rel && this.mode === "diff") {
+      this.untrackedDiff = untracked;
+      this.renderDiff(rows, hljs); // else switched while loading
+    }
   }
 
   renderDiff(rows, hljs) {
@@ -186,14 +191,40 @@ export class Viewer {
     const color = (t) => (lang ? hljs.highlight(t, { language: lang, ignoreIllegals: true }).value : esc(t));
     const width = String(Math.max(0, ...rows.map((r) => Math.max(r.old ?? 0, r.new ?? 0)))).length;
     this.diff.style.setProperty("--lnw", `${Math.max(width, 2)}ch`);
+    let hunkIdx = 0;
     const html = rows.slice(0, DIFF_ROWS).map((r) => {
-      if (r.kind === "hunk") return `<div class="dl hunk"><span class="ln"></span><span class="ln n"></span><span class="dm"></span><span class="dt">⋯ ${esc(r.text)}</span></div>`;
+      if (r.kind === "hunk") {
+        const idx = hunkIdx++;
+        const btn = this.untrackedDiff ? "" : `<button class="hunk-discard" data-hunk="${idx}" title="이 블록만 마지막 커밋으로 되돌리기">되돌리기</button>`;
+        return `<div class="dl hunk"><span class="ln"></span><span class="ln n"></span><span class="dm"></span><span class="dt">⋯ ${esc(r.text)}${btn}</span></div>`;
+      }
       if (r.kind === "meta") return `<div class="dl meta"><span class="dt">${esc(r.text)}</span></div>`;
       const mark = r.kind === "add" ? "+" : r.kind === "del" ? "−" : "";
       return `<div class="dl ${r.kind}"><span class="ln">${r.old ?? ""}</span><span class="ln n">${r.new ?? ""}</span><span class="dm">${mark}</span><span class="dt">${color(r.text)}</span></div>`;
     });
     if (rows.length > DIFF_ROWS) html.push(`<div class="dl meta"><span class="dt">변경이 많아 앞쪽 ${DIFF_ROWS}줄만 보여 줍니다 · 코드 화면에서 전체를 보세요</span></div>`);
     this.diff.innerHTML = html.join("");
+    for (const btn of this.diff.querySelectorAll(".hunk-discard")) {
+      btn.onclick = async () => {
+        if (!btn.dataset.armed) {
+          btn.dataset.armed = "1";
+          btn.textContent = "확인";
+          setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "되돌리기"; } }, 2500);
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await invoke("git_discard_hunk", { root: this.card.root, rel: this.rel, hunkIndex: Number(btn.dataset.hunk) });
+          await this.loadDiff();
+          this.card.explorer?.refreshGit?.();
+          this.card.refreshDiffStat?.();
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "실패";
+          btn.title = String(e);
+        }
+      };
+    }
   }
 
   render(text, changed, hljs) {

@@ -8,13 +8,13 @@ import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
-import { MENU, keyLabel, ROTATE_AT, contextLimit, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
+import { MENU, keyLabel, ROTATE_AT, contextLimit, detectLocalhostUrl, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { elapsed, renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><span class="ctx" title="컨텍스트 사용량"></span>
+  <span class="badge"></span><span class="stext"></span><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
   <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
@@ -61,6 +61,9 @@ export class Card {
     this.pick.onchange = (e) => this.onAgentPick(e.target.value);
     this.$(".b-restart").onclick = () => this.restart();
     this.$(".b-shell").onclick = () => this.toggleShell();
+    this.$(".b-preview").onclick = () => this.previewUrl && openUrl(this.previewUrl);
+    this.$(".b-test").onclick = () => this.onTestBadgeClick();
+    this.$(".ctx").onclick = () => this.manualHandoff();
     const grip = this.$(".shell-grip");
     grip.onpointerdown = (e) => {
       grip.setPointerCapture(e.pointerId);
@@ -290,7 +293,17 @@ export class Card {
   async openWorktree() {
     try {
       const path = await invoke("git_worktree_add", { root: this.root });
-      this.app.addCard({ path, agent: this.adapter?.name });
+      this.app.addCard({
+        path,
+        agent: this.adapter?.name,
+        worktree_setup: this.cfg.worktree_setup,
+        post_turn_cmd: this.cfg.post_turn_cmd,
+      });
+      if (this.cfg.worktree_setup) {
+        invoke("run_shell_cmd", { root: path, cmd: this.cfg.worktree_setup }).then((res) => {
+          if (!res.ok) message(`worktree 초기화 명령 실패 (${res.code}):\n${res.output}`, { kind: "warning" });
+        }).catch((e) => message(`worktree 초기화 실패: ${e}`, { kind: "warning" }));
+      }
     } catch (e) {
       message(`worktree를 만들지 못했습니다: ${e}`, { kind: "error" });
     }
@@ -338,6 +351,17 @@ export class Card {
       this.peekTimer = setTimeout(() => {
         this.peekTimer = null;
         const lines = this.agent.lastLines(20, true);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const found = detectLocalhostUrl(lines[i]);
+          if (found) {
+            this.previewUrl = found.url;
+            const pb = this.$(".b-preview");
+            pb.textContent = `:${found.port}`;
+            pb.title = `로컬 서버 열기 (${found.url})`;
+            pb.hidden = false;
+            break;
+          }
+        }
         const menu = MENU.test(lines.filter(Boolean).slice(-8).join("\n"));
         const choices = menu ? menuChoices(lines) : [];
         const question = menuQuestion(lines, choices);
@@ -468,9 +492,53 @@ export class Card {
     } else {
       const limit = contextLimit(this.adapter, this.contextModel);
       if (limit && this.contextTokens >= limit * ROTATE_AT) this.rotate(this.adapter, `컨텍스트가 ${Math.round((this.contextTokens / limit) * 100)}% 찼습니다.`);
+      if (!this.rotating && this.cfg.post_turn_cmd) this.runPostTurnTest();
     }
     // A forwarded note takes this turn; the queue goes on when that one ends.
     if (!note && !this.rotating) this.sendQueued();
+  }
+
+  /** Trigger a manual context handoff (progress.md + fresh session) from header or Command Palette. */
+  async manualHandoff() {
+    if (this.rotating) return;
+    if (!["done", "idle"].includes(this.status)) {
+      return message("에이전트가 응답을 마친 뒤 핸드오프할 수 있습니다.", { kind: "info" });
+    }
+    const ok = await ask("현재 맥락을 progress.md에 정리하고 새 대화로 이어받을까요?", { title: "세션 핸드오프", kind: "info", okLabel: "핸드오프", cancelLabel: "취소" });
+    if (ok) this.rotate(this.adapter, "사용자가 수동 핸드오프를 요청했습니다.");
+  }
+
+  /** Run project-configured verification command after an agent turn ends. */
+  async runPostTurnTest() {
+    const cmd = this.cfg.post_turn_cmd?.trim();
+    if (!cmd) return;
+    const seq = (this.testSeq = (this.testSeq ?? 0) + 1);
+    const btn = this.$(".b-test");
+    btn.hidden = false;
+    btn.className = "b-test running";
+    btn.textContent = "검증 중…";
+    btn.title = cmd;
+    try {
+      const res = await invoke("run_shell_cmd", { root: this.root, cmd });
+      if (seq !== this.testSeq) return;
+      this.lastTestResult = res;
+      btn.className = `b-test ${res.ok ? "ok" : "fail"}`;
+      btn.textContent = res.ok ? "검증 통과" : `검증 실패 (${res.code})`;
+      btn.title = res.ok ? `${cmd} 통과` : `${cmd} 실패 — 클릭하면 실패 로그를 입력창에 넣습니다`;
+      if (!res.ok) this.app.onTestFail?.(this, res);
+    } catch (e) {
+      if (seq !== this.testSeq) return;
+      btn.className = "b-test fail";
+      btn.textContent = "검증 오류";
+      this.lastTestResult = { ok: false, code: -1, output: String(e) };
+    }
+  }
+
+  onTestBadgeClick() {
+    const res = this.lastTestResult;
+    if (!res) return;
+    if (res.ok) return message(`명령 통과: ${this.cfg.post_turn_cmd}\n\n${res.output || "(출력 없음)"}`, { kind: "info" });
+    this.composer.insert(`다음 검증 명령이 실패했습니다 (\`${this.cfg.post_turn_cmd}\`, 종료 코드 ${res.code}). 실패 원인을 확인하고 고쳐주세요:\n\`\`\`\n${res.output}\n\`\`\`\n`);
   }
 
   /** Queueing needs an exact turn end; a silence guess could fire mid-work. */
@@ -611,9 +679,29 @@ export class Card {
     const s = await invoke("read_spec", { root: this.root, preferred: this.cfg.spec_file ?? null }).catch(() => null);
     this.$(".spec-name").textContent = s ? s.name : "(없음)";
     // Spec files may be written by agents: sanitize before rendering.
-    this.$(".spec").innerHTML = s
+    const box = this.$(".spec");
+    box.innerHTML = s
       ? DOMPurify.sanitize(marked.parse(s.content))
       : `<p class="muted">MASTER_SPEC.md · CLAUDE.md · README.md 가 없습니다.</p>`;
+    // Allow clicking unchecked spec checklist items to queue/insert them as the next prompt.
+    for (const cb of box.querySelectorAll('input[type="checkbox"]')) {
+      cb.disabled = true;
+      if (cb.checked) continue;
+      const li = cb.closest("li");
+      if (!li) continue;
+      const run = document.createElement("button");
+      run.type = "button";
+      run.className = "spec-run";
+      run.textContent = "실행";
+      run.title = "이 항목을 에이전트 지시로 넣기";
+      run.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = li.textContent.replace(/실행$/, "").trim();
+        if (text) this.composer.insert(`스펙(${s?.name ?? "spec"})의 다음 항목을 진행해줘:\n- ${text}`);
+      };
+      li.append(" ", run);
+    }
   }
 
   async fileList() {

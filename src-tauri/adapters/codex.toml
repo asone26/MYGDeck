@@ -9,4 +9,5 @@ resume_args = "resume --last"
 mention = "@{path}"
 clear_cmd = "/new"
 status = "idle"
+waiting = "Approve|Allow|Proceed\\?|\\[y/N\\]|Yes, proceed"
 commands = ["/model", "/approvals", "/new", "/init", "/compact", "/diff", "/mention", "/status", "/quit"]

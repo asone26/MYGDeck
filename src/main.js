@@ -32,6 +32,7 @@ const app = {
   addCard,
   layout,
   onStatus,
+  onTestFail,
   onPeek: () => overlayKind === "overview" && renderOverview(),
 };
 
@@ -219,6 +220,7 @@ let notifyAllowed = null;
 let jumpTo = null; // card to show when the user comes back to the window
 
 async function onStatus(card, prev) {
+  if (card.cfg?.muted) return;
   if (!["waiting", "done"].includes(card.status) || card.rotating || prev === "starting") return;
   if (card.status === "done" && card.queue.length) return; // the next queued input goes on by itself
   if (document.hasFocus()) return; // the header strip already shows it
@@ -231,6 +233,12 @@ async function onStatus(card, prev) {
   if (!notifyAllowed) return;
   const what = card.status === "waiting" ? card.statusText || "입력을 기다립니다" : `완료${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`;
   sendNotification({ title: `MYG Deck · ${card.name}`, body: what });
+}
+
+async function onTestFail(card, res) {
+  if (card.cfg?.muted || document.hasFocus()) return;
+  notifyAllowed ??= (await isPermissionGranted().catch(() => false)) || (await requestPermission().catch(() => "denied")) === "granted";
+  if (notifyAllowed) sendNotification({ title: `MYG Deck · ${card.name} 검증 실패`, body: `종료 코드 ${res.code}: ${card.cfg.post_turn_cmd}` });
 }
 
 window.addEventListener("focus", () => {
@@ -472,11 +480,153 @@ async function quickOpen() {
   draw();
 }
 
+function openPalette() {
+  if (overlayKind === "palette") return closeOverlay();
+  overlayKind = "palette";
+  overlay.hidden = false;
+  const c = app.cards[app.active];
+  const actions = [
+    ...app.cards.map((card, idx) => ({ label: `프로젝트 이동: ${card.name}`, hint: `#${idx + 1}`, run: () => setActive(idx) })),
+    { label: "프로젝트 폴더 추가", hint: keyLabel("Ctrl+'"), run: addProject },
+    { label: "여러 프로젝트에 동시 지시 (브로드캐스트)", hint: "비교 실행", run: openBroadcast },
+    ...(c ? [
+      { label: `${c.name}: 파일 빠른 열기`, hint: keyLabel("Ctrl+P"), run: quickOpen },
+      { label: `${c.name}: 스펙 패널 열기/닫기`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
+      { label: `${c.name}: 하단 터미널 열기/닫기`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
+      { label: `${c.name}: GUI / CLI 화면 전환`, hint: keyLabel("Ctrl+."), run: () => c.toggleView() },
+      { label: `${c.name}: 수동 세션 핸드오프 (progress.md → 새 대화)`, hint: "컨텍스트", run: () => c.manualHandoff() },
+      { label: `${c.name}: worktree로 하나 더 열기`, hint: "병렬", run: () => c.openWorktree() },
+      { label: `${c.name}: 프로젝트 자동화 · 알림 설정`, hint: c.cfg.muted ? "음소거됨" : "훅/검증", run: () => openProjectSettings(c) },
+      { label: `${c.name}: 알림 ${c.cfg.muted ? "켜기" : "음소거"}`, hint: "알림", run: () => { c.cfg.muted = !c.cfg.muted; save(); } },
+    ] : []),
+    { label: "전체 보기", hint: keyLabel("Ctrl+0"), run: toggleOverview },
+    { label: "모바일 대시보드 연결 안내", hint: "원격", run: openMobileGuide },
+    { label: "AI 연결 설정", hint: "모델", run: () => $("conn-btn").click() },
+    { label: "테마 바꾸기 (다크 / 밝게 / 시스템)", hint: "테마", run: cycleTheme },
+    { label: "키보드 단축키 보기", hint: "도움말", run: openShortcuts },
+  ];
+  overlay.innerHTML = `<div class="qo pal"><div class="qo-title">커맨드 팔레트 · ${keyLabel("Ctrl+K")}</div><input class="qo-in" placeholder="실행할 명령이나 프로젝트 이름 입력…" spellcheck="false"><ul class="qo-list"></ul></div>`;
+  const input = overlay.querySelector("input");
+  const ul = overlay.querySelector("ul");
+  let matches = actions;
+  let sel = 0;
+  const draw = () => {
+    ul.textContent = "";
+    matches.slice(0, 14).forEach((item, i) => {
+      const li = document.createElement("li");
+      if (i === sel) li.className = "sel";
+      const sp = document.createElement("span");
+      sp.textContent = item.label;
+      const hint = document.createElement("span");
+      hint.className = "pal-hint";
+      hint.textContent = item.hint;
+      li.append(sp, hint);
+      li.onmousedown = () => { closeOverlay(); item.run(); };
+      ul.append(li);
+    });
+  };
+  input.oninput = () => {
+    const q = input.value.trim().toLowerCase();
+    matches = q ? actions.filter((a) => `${a.label} ${a.hint}`.toLowerCase().includes(q)) : actions;
+    sel = 0;
+    draw();
+  };
+  input.onkeydown = (e) => {
+    const n = Math.min(matches.length, 14);
+    if (e.key === "ArrowDown" && n) { e.preventDefault(); sel = (sel + 1) % n; draw(); }
+    else if (e.key === "ArrowUp" && n) { e.preventDefault(); sel = (sel - 1 + n) % n; draw(); }
+    else if (e.key === "Enter" && matches[sel]) { e.preventDefault(); const item = matches[sel]; closeOverlay(); item.run(); }
+  };
+  draw();
+  input.focus();
+}
+
+function openBroadcast() {
+  if (!app.cards.length) return;
+  overlayKind = "broadcast";
+  overlay.hidden = false;
+  const box = document.createElement("div");
+  box.className = "qo mod-box";
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">여러 프로젝트에 동시 지시 (브로드캐스트)</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
+    <div class="mod-list"></div>
+    <textarea class="mod-ta" rows="4" placeholder="선택한 모든 카드에 동시에 보낼 지시를 입력하세요…"></textarea>
+    <div class="mod-foot"><button class="mod-send">선택한 카드에 전송</button></div>`;
+  box.querySelector(".keys-close").onclick = closeOverlay;
+  const list = box.querySelector(".mod-list");
+  app.cards.forEach((c, i) => {
+    const lbl = document.createElement("label");
+    lbl.className = "mod-chk";
+    lbl.innerHTML = `<input type="checkbox" value="${i}" checked> <span>${c.name}</span> <small class="muted">${c.adapter?.name ?? "custom"}</small>`;
+    list.append(lbl);
+  });
+  const ta = box.querySelector(".mod-ta");
+  box.querySelector(".mod-send").onclick = () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    const targets = [...list.querySelectorAll("input:checked")].map((el) => app.cards[Number(el.value)]).filter(Boolean);
+    closeOverlay();
+    for (const card of targets) card.sendToAgent(text);
+  };
+  overlay.replaceChildren(box);
+  ta.focus();
+}
+
+function openProjectSettings(card) {
+  overlayKind = "proj-settings";
+  overlay.hidden = false;
+  const box = document.createElement("div");
+  box.className = "qo mod-box";
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">${card.name} · 자동화 및 알림 설정</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
+    <label class="mod-field"><span>Worktree 생성 시 실행할 명령 (예: <code>npm ci</code>)</span><input class="qo-in f-wt" placeholder="비워 두면 .env 파일만 자동 복사"></label>
+    <label class="mod-field"><span>턴 종료 후 자동 검증 명령 (예: <code>npm test</code>)</span><input class="qo-in f-pt" placeholder="비워 두면 실행 안 함"></label>
+    <label class="mod-chk"><input type="checkbox" class="f-mute"> <span>이 프로젝트의 OS 알림 음소거</span></label>
+    <div class="mod-foot"><button class="mod-send">저장</button></div>`;
+  box.querySelector(".keys-close").onclick = closeOverlay;
+  const wt = box.querySelector(".f-wt");
+  const pt = box.querySelector(".f-pt");
+  const mute = box.querySelector(".f-mute");
+  wt.value = card.cfg.worktree_setup ?? "";
+  pt.value = card.cfg.post_turn_cmd ?? "";
+  mute.checked = !!card.cfg.muted;
+  box.querySelector(".mod-send").onclick = () => {
+    card.cfg.worktree_setup = wt.value.trim() || undefined;
+    card.cfg.post_turn_cmd = pt.value.trim() || undefined;
+    card.cfg.muted = mute.checked || undefined;
+    save();
+    closeOverlay();
+  };
+  overlay.replaceChildren(box);
+  wt.focus();
+}
+
+function openMobileGuide() {
+  overlayKind = "mobile-guide";
+  overlay.hidden = false;
+  const url = "https://mygdeck.asone26g.workers.dev";
+  const box = document.createElement("div");
+  box.className = "qo mod-box";
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">모바일 대시보드 연결 안내</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
+    <p class="mod-p">PC 데몬을 Cloudflare 터널로 연결해 휴대폰에서 상태 확인·승인·지시 전송을 할 수 있습니다.</p>
+    <div class="mod-row"><code>${url}</code><button class="mod-copy">주소 복사</button></div>
+    <ol class="mod-steps">
+      <li>터미널에서 <code>mygdeck-cli mobile on</code> 실행 (최초 1회는 <code>docs/mobile.md</code> 참고해 토큰 설정)</li>
+      <li>휴대폰 브라우저에서 위 주소를 열고 홈 화면에 추가(PWA)</li>
+      <li>종료할 때는 <code>mygdeck-cli mobile off</code></li>
+    </ol>`;
+  box.querySelector(".keys-close").onclick = closeOverlay;
+  box.querySelector(".mod-copy").onclick = async (e) => {
+    await navigator.clipboard.writeText(url).catch(() => {});
+    e.target.textContent = "복사됨";
+  };
+  overlay.replaceChildren(box);
+}
+
 function openShortcuts() {
   if (overlayKind === "shortcuts") return closeOverlay();
   overlayKind = "shortcuts";
   overlay.hidden = false;
   const items = [
+    ["Ctrl+K", "커맨드 팔레트 열기"],
     ["Ctrl+Space", "다음 대기 프로젝트로 이동"],
     ["Ctrl+0", "전체 보기 열기 / 닫기"],
     ["Ctrl+1~9", "해당 번호 프로젝트로 이동"],
@@ -548,6 +698,7 @@ window.addEventListener(
       if (i >= 0) setActive(i);
     }
     else if (k === "Quote") addProject();
+    else if (k === "KeyK") openPalette();
     else if (!c) return;
     else if (k === "Equal" || k === "Minus") {
       const d = DENSITIES.indexOf(c.density) + (k === "Equal" ? 1 : -1);

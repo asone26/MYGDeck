@@ -206,6 +206,104 @@ pub fn file_diff(root: String, rel: String) -> Result<FileDiff, String> {
     Ok(FileDiff { diff, untracked })
 }
 
+/// Extract the `hunk_index`-th unified diff hunk along with its file header so `git apply -R` can revert just that hunk.
+pub fn single_hunk_patch(diff: &str, hunk_index: usize) -> Option<String> {
+    let mut header = Vec::new();
+    let mut hunks: Vec<Vec<&str>> = Vec::new();
+    for line in diff.lines() {
+        if line.starts_with("@@ ") {
+            hunks.push(vec![line]);
+        } else if let Some(cur) = hunks.last_mut() {
+            cur.push(line);
+        } else {
+            header.push(line);
+        }
+    }
+    let hunk = hunks.get(hunk_index)?;
+    let mut out = header.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&hunk.join("\n"));
+    out.push('\n');
+    Some(out)
+}
+
+/// Revert only one hunk of a file's uncommitted diff against HEAD.
+#[tauri::command]
+pub fn git_discard_hunk(root: String, rel: String, hunk_index: usize) -> Result<(), String> {
+    let path = safe_join(&root, &rel)?;
+    if rel.trim_matches(|c| c == '/' || c == '.').is_empty() || path.is_dir() {
+        return Err("not a file".into());
+    }
+    let diff = run_git(&root, &["--literal-pathspecs", "diff", "HEAD", "--", &rel])?;
+    let patch = single_hunk_patch(&diff, hunk_index).ok_or("hunk not found")?;
+    let mut child = std::process::Command::new("git")
+        .args(["-C", &root, "apply", "-R", "--whitespace=nowarn", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin.write_all(patch.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+#[derive(Serialize)]
+pub struct CmdResult {
+    pub ok: bool,
+    pub code: i32,
+    pub output: String,
+}
+
+/// Run a project-configured shell command (worktree setup or post-turn verification) in `root`.
+#[tauri::command]
+pub fn run_shell_cmd(root: String, cmd: String) -> Result<CmdResult, String> {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return Err("empty command".into());
+    }
+    let mut command = if cfg!(windows) {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", trimmed]);
+        c
+    } else {
+        let mut c = std::process::Command::new("sh");
+        c.args(["-lc", trimmed]);
+        c
+    };
+    let out = command.current_dir(&root).output().map_err(|e| e.to_string())?;
+    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !stderr.is_empty() {
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        combined.push_str(&stderr);
+    }
+    // Keep only the tail so large test logs never bloat IPC.
+    if combined.len() > 8192 {
+        let mut start = combined.len() - 8192;
+        while !combined.is_char_boundary(start) {
+            start += 1;
+        }
+        combined = format!("…\n{}", &combined[start..]);
+    }
+    Ok(CmdResult {
+        ok: out.status.success(),
+        code: out.status.code().unwrap_or(-1),
+        output: combined.trim().to_string(),
+    })
+}
+
 /// "되돌리기": put one file back to the last commit. A file the last commit doesn't have is deleted.
 #[tauri::command]
 pub fn git_discard(root: String, rel: String) -> Result<(), String> {
@@ -285,9 +383,26 @@ pub fn git_worktree_add(root: String) -> Result<String, String> {
         }
         let path = dir.to_string_lossy().replace('\\', "/");
         run_git(&repo, &["worktree", "add", "-q", "-b", &branch, &path, "HEAD"])?;
+        copy_env_files(&top, &dir);
         return Ok(path);
     }
     Err("worktree 이름을 정하지 못했습니다".into())
+}
+
+fn copy_env_files(src: &std::path::Path, dst: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(src) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let s = name.to_string_lossy();
+        if !s.starts_with(".env") || s.ends_with(".example") || s.ends_with(".sample") {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_file() && !to.exists() {
+            let _ = std::fs::copy(&from, &to);
+        }
+    }
 }
 
 /// A deck worktree's branch (`mygdeck/wtN`) and the main working folder it came from.
@@ -528,5 +643,28 @@ mod tests {
     fn parses_hunk_headers() {
         let d = "@@ -1,2 +1,3 @@ fn x\n+a\n@@ -10 +12 @@\n@@ -20,3 +25,0 @@\n";
         assert_eq!(parse_hunks(d), vec![1, 2, 3, 12]);
+    }
+
+    #[test]
+    fn discards_single_hunk() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-hunk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        g(&["config", "core.autocrlf", "false"]);
+        let orig = (1..=20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n") + "\n";
+        std::fs::write(dir.join("m.txt"), &orig).unwrap();
+        git_save(root.clone(), "init".into()).unwrap();
+
+        let edited = orig.replace("line2\n", "TWO\n").replace("line19\n", "NINETEEN\n");
+        std::fs::write(dir.join("m.txt"), &edited).unwrap();
+        git_discard_hunk(root.clone(), "m.txt".into(), 0).unwrap();
+        let after = std::fs::read_to_string(dir.join("m.txt")).unwrap();
+        assert!(after.contains("line2\n") && after.contains("NINETEEN\n"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

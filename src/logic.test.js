@@ -251,3 +251,12 @@ test("context window follows the transcript's model", () => {
   assert.equal(contextLimit({ context_limit: 0 }, "claude-opus-5-5"), 0);
   assert.equal(contextLimit(null, "x"), undefined);
 });
+
+test("detectLocalhostUrl finds local server URLs in ANSI terminal output", async () => {
+  const { detectLocalhostUrl, isDeckKey } = await import("./logic.js");
+  assert.deepEqual(detectLocalhostUrl("  ➜  Local:   \x1b[36mhttp://localhost:5173/\x1b[0m\n"), { url: "http://localhost:5173/", port: 5173 });
+  assert.deepEqual(detectLocalhostUrl("Listening on http://127.0.0.1:8080/api."), { url: "http://127.0.0.1:8080/api", port: 8080 });
+  assert.equal(detectLocalhostUrl("https://example.com:8443"), null);
+  assert.equal(isDeckKey({ code: "KeyK", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }, false), true);
+  assert.equal(isDeckKey({ code: "KeyK", metaKey: true, altKey: false, shiftKey: false, ctrlKey: false }, true), true);
+});

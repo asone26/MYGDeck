@@ -16,6 +16,15 @@ pub struct Project {
     /// false: start a new conversation on launch instead of reopening the last one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<bool>,
+    /// Optional shell command run inside a newly created worktree (e.g. `npm ci`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_setup: Option<String>,
+    /// Optional shell command run after each agent turn finishes (e.g. `npm test`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_turn_cmd: Option<String>,
+    /// true: mute OS notifications for this project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub muted: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

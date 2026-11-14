@@ -152,7 +152,7 @@ export function pasteSequence(text, bracketed) {
 /** Ctrl shortcuts owned by the deck; everything else goes to the CLI (spec 3.3). */
 export const DECK_KEYS = new Set([
   "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
-  "KeyI", "Equal", "Minus",
+  "KeyI", "KeyK", "Equal", "Minus",
   // Not Ctrl+letters: in the CLI those are copy/interrupt, line editing (Ctrl+W/N/J...) or Claude Code shortcuts.
   "Space", "Quote", "F4", "Period", "KeyQ", "Backquote", "Semicolon", "PageUp", "PageDown", "Tab",
 ]);
@@ -435,4 +435,15 @@ export function addedRows(text) {
   const lines = String(text).replace(/\r/g, "").split("\n");
   if (lines.at(-1) === "") lines.pop();
   return [{ kind: "hunk", text: "새 파일" }, ...lines.map((t, i) => ({ kind: "add", new: i + 1, text: t }))];
+}
+
+const LOCAL_URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):(\d{2,5})(?:\/[^\s\x1b"'<>)]*)?/i;
+
+/** Detect a local dev-server URL in terminal output (strips trailing punctuation). */
+export function detectLocalhostUrl(text) {
+  const m = LOCAL_URL_RE.exec(String(text ?? "").replace(/\x1b\[[0-9;]*m/g, ""));
+  if (!m) return null;
+  const port = Number(m[1]);
+  if (port < 80 || port > 65535) return null;
+  return { url: m[0].replace(/[.,;:!?]+$/, ""), port };
 }
