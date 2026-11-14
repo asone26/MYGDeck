@@ -241,6 +241,22 @@ export class Composer {
     this.update();
   }
 
+  /** Insert OS-dropped file paths, converting paths inside this project to `@relpath`. */
+  insertPaths(paths) {
+    if (!paths?.length) return;
+    const norm = (s) => s.replace(/\\/g, "/");
+    const root = norm(this.card.root).replace(/\/+$/, "") + "/";
+    const formatted = paths.map((p) => {
+      const np = norm(p);
+      if (np.toLowerCase().startsWith(root.toLowerCase())) {
+        const rel = np.slice(root.length);
+        return (this.card.adapter?.mention || "@{path}").replace("{path}", rel);
+      }
+      return /\s/.test(p) ? `"${p}"` : p;
+    });
+    this.insert(formatted.join(" "));
+  }
+
   /** Paths the deck can reach today: the agent, plus a model switch if the adapter has one (spec 4.3). */
   reachable() {
     const a = this.card.adapter;

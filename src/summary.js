@@ -174,7 +174,31 @@ function answer(texts) {
   const ans = el("div", "s-answer md");
   ans.innerHTML = DOMPurify.sanitize(marked.parse(texts.join("\n\n")));
   ans.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
+  for (const pre of ans.querySelectorAll("pre")) {
+    const btn = el("button", "code-copy", "복사");
+    btn.type = "button";
+    btn.onclick = async () => {
+      const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
+      await navigator.clipboard.writeText(code).catch(() => {});
+      btn.textContent = "복사됨";
+      setTimeout(() => { if (btn.isConnected) btn.textContent = "복사"; }, 1400);
+    };
+    pre.append(btn);
+  }
   return ans;
+}
+
+/** Export a card's conversation history + current turn as Markdown. */
+export function exportMarkdown(card) {
+  const sections = [`# ${card.name} (${card.root})`];
+  for (const h of card.history ?? []) {
+    if (h.ask) sections.push(`## 요청\n${h.ask}`);
+    if (h.texts?.length) sections.push(`## 답변\n${h.texts.join("\n\n")}`);
+  }
+  if (card.turnAsk) sections.push(`## 요청\n${card.turnAsk}`);
+  const cur = card.turn?.texts ?? card.live?.flow?.filter((x) => x.kind === "text").map((x) => x.text) ?? [];
+  if (cur.length) sections.push(`## 답변\n${cur.join("\n\n")}`);
+  return sections.join("\n\n");
 }
 
 /** Short lines for compact cards, the side column and the overview. */

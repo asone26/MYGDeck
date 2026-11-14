@@ -22,6 +22,7 @@ const TEMPLATE = `
 <div class="mods">
   <details class="m-files"><summary>${icon(ICONS.FolderTree)}파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
   <details class="m-spec"><summary>${icon(ICONS.FileText)}스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
+  <details class="m-note"><summary>메모</summary><textarea class="note-ta" rows="4" placeholder="이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…"></textarea></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
 <div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button></div>
@@ -80,6 +81,14 @@ export class Card {
     spec.addEventListener("toggle", () => spec.open && this.loadSpec());
     // Links in a spec would navigate the whole app away.
     this.$(".spec").addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
+    const noteTa = this.$(".note-ta");
+    noteTa.value = cfg.note ?? "";
+    let noteTimer = null;
+    noteTa.oninput = () => {
+      this.cfg.note = noteTa.value || undefined;
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => this.app.save(), 350);
+    };
 
     this.explorer = new Explorer(this, this.$(".explorer"));
     this.viewer = new Viewer(this, this.$(".viewer"));
@@ -198,14 +207,16 @@ export class Card {
     // Only a real change pops the icon in; repeats of the same status rebuild it quietly.
     badge.classList.toggle("pop", prev !== status);
     if (status === "done" && prev === "working") {
+      this.lastTurnElapsed = this.turnStart ? elapsed(this.turnStart) : null;
       this.el.classList.remove("flash");
       void this.el.offsetWidth; // restart the sweep
       this.el.classList.add("flash");
       clearTimeout(this.flashTimer);
       this.flashTimer = setTimeout(() => this.el.classList.remove("flash"), 1200);
     }
-    this.$(".stext").textContent = shown;
-    this.$(".stext").title = shown;
+    const doneShown = status === "done" && this.lastTurnElapsed ? `완료 · ${this.lastTurnElapsed}` : shown;
+    this.$(".stext").textContent = doneShown;
+    this.$(".stext").title = doneShown;
     this.composer.setBusy(status === "working" || status === "waiting");
     this.updateView();
     this.app.renderStrip();
@@ -763,9 +774,27 @@ export class Card {
   }
 
   /** Type text into the CLI exactly as if the user typed it, then press Enter. */
-  sendToAgent(text) {
+  async sendToAgent(text) {
+    if (!this.rotating && !text.includes("[mygdeck]")) {
+      this.turnCheckpoint = await invoke("git_checkpoint_create", { root: this.root }).catch(() => null);
+    }
     this.agent.write(pasteSequence(text, this.agent.term.modes.bracketedPasteMode));
     setTimeout(() => this.agent.write("\r"), 80);
+  }
+
+  /** Restore tracked files to the snapshot captured before the last agent turn. */
+  async restoreCheckpoint() {
+    if (!this.turnCheckpoint) return message("복원할 이전 턴 체크포인트가 없습니다.", { kind: "info" });
+    const ok = await ask(`${this.name}: 마지막 지시 직전의 git 상태로 되돌릴까요?`, { title: "체크포인트 복원", kind: "warning", okLabel: "되돌리기", cancelLabel: "취소" });
+    if (!ok) return;
+    try {
+      await invoke("git_checkpoint_restore", { root: this.root, rev: this.turnCheckpoint });
+      this.turnCheckpoint = null;
+      this.explorer.refreshGit();
+      this.viewer.reload();
+    } catch (e) {
+      message(`체크포인트 복원 실패: ${e}`, { kind: "error" });
+    }
   }
 
   toggleShell() {

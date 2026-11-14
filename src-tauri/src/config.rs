@@ -25,6 +25,9 @@ pub struct Project {
     /// true: mute OS notifications for this project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub muted: Option<bool>,
+    /// Per-project local scratchpad note (never sent to the agent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

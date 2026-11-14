@@ -16,7 +16,7 @@
         "title": "MYG Deck",
         "width": 1440,
         "height": 900,
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ],
     "security": {

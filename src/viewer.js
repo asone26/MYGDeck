@@ -21,6 +21,8 @@ export class Viewer {
           <span class="vseg"><button data-v="diff" title="마지막 커밋과 비교">변경</button><button data-v="code" title="파일 전체">코드</button></span>
           <span class="vstat"></span>
           <span class="vnav"><button class="v-prev" title="이전 변경 파일 ([)">‹</button><span class="vpos"></span><button class="v-next" title="다음 변경 파일 (])">›</button></span>
+          <span class="vnav"><button class="v-hprev" title="이전 변경 블록">▲</button><button class="v-hnext" title="다음 변경 블록">▼</button></span>
+          <button class="v-split" title="나란히(2열) 비교 보기">나란히</button>
           <button class="v-revert"></button>
         </span>
         <button class="v-ins" title="${keyLabel("선택한 코드를 입력창에 넣기 (Ctrl+I)")}">@<span class="vl"> 입력창에 넣기</span></button>
@@ -32,9 +34,17 @@ export class Viewer {
     this.diff = el.querySelector(".vdiff");
     this.revertBtn = el.querySelector(".v-revert");
     this.mode = "code";
+    this.splitMode = false;
     el.querySelector(".vseg").onclick = (e) => e.target.dataset.v && this.setMode(e.target.dataset.v);
     el.querySelector(".v-prev").onclick = () => this.step(-1);
     el.querySelector(".v-next").onclick = () => this.step(1);
+    el.querySelector(".v-hprev").onclick = () => this.jumpHunk(-1);
+    el.querySelector(".v-hnext").onclick = () => this.jumpHunk(1);
+    el.querySelector(".v-split").onclick = (e) => {
+      this.splitMode = !this.splitMode;
+      e.currentTarget.classList.toggle("on", this.splitMode);
+      this.diff.classList.toggle("split", this.splitMode);
+    };
     this.revertBtn.onclick = () => this.revert();
     el.querySelector(".v-close").onclick = () => this.close();
     // mousedown keeps the code selection alive until the click handler reads it.
@@ -49,6 +59,16 @@ export class Viewer {
         this.step(e.key === "]" ? 1 : -1);
       }
     });
+  }
+
+  jumpHunk(dir) {
+    const hunks = [...this.diff.querySelectorAll(".dl.hunk")];
+    if (!hunks.length) return;
+    const top = this.diff.scrollTop + 8;
+    const target = dir > 0
+      ? hunks.find((h) => h.offsetTop > top) ?? hunks[0]
+      : [...hunks].reverse().find((h) => h.offsetTop < top - 16) ?? hunks.at(-1);
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
   /** Changed files in explorer order, for ‹ › and the review controls. */

@@ -398,6 +398,29 @@ pub fn git_branch_info(root: String) -> Option<BranchInfo> {
     Some(BranchInfo { branch, pr_url })
 }
 
+/// Capture a non-intrusive git snapshot before an agent turn (`git stash create` if dirty, else `HEAD`).
+#[tauri::command]
+pub fn git_checkpoint_create(root: String) -> Option<String> {
+    let stash = git(&root, &["stash", "create"]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    stash.or_else(|| git(&root, &["rev-parse", "HEAD"]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
+}
+
+/// Restore tracked files to a previously captured checkpoint (`stash` commit or `HEAD` commit).
+#[tauri::command]
+pub fn git_checkpoint_restore(root: String, rev: String) -> Result<(), String> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return Err("empty checkpoint".into());
+    }
+    if git(&root, &["rev-parse", "--verify", "--quiet", &format!("{rev}^2")]).is_some() {
+        run_git(&root, &["reset", "--hard", "HEAD"])?;
+        run_git(&root, &["stash", "apply", "--index", rev]).or_else(|_| run_git(&root, &["stash", "apply", rev]))?;
+    } else {
+        run_git(&root, &["reset", "--hard", rev])?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn git_shortstat(root: String) -> Option<DiffStat> {
     git(&root, &["diff", "--shortstat", "HEAD"]).map(|s| parse_shortstat(&s))
@@ -716,5 +739,27 @@ mod tests {
             Some("https://gitlab.com/org/repo/-/merge_requests/new?merge_request[source_branch]=main")
         );
         assert_eq!(remote_compare_url("https://example.com/a/b", "main"), None);
+    }
+
+    #[test]
+    fn creates_and_restores_checkpoint() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-cp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        g(&["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("a.txt"), "v1\n").unwrap();
+        git_save(root.clone(), "init".into()).unwrap();
+
+        std::fs::write(dir.join("a.txt"), "v2\n").unwrap();
+        let cp = git_checkpoint_create(root.clone()).unwrap();
+        std::fs::write(dir.join("a.txt"), "v3\n").unwrap();
+        git_checkpoint_restore(root.clone(), cp).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v2\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

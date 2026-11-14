@@ -101,6 +101,8 @@ pub fn run() {
             fsx::git_push,
             fsx::git_ahead,
             fsx::git_branch_info,
+            fsx::git_checkpoint_create,
+            fsx::git_checkpoint_restore,
             fsx::git_shortstat,
             fsx::git_worktree_add,
             fsx::git_worktree_merge,

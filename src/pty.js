@@ -16,6 +16,7 @@ const LIGHT = {
 };
 let THEME = DARK;
 let CONTRAST = 1;
+let FONT_SIZE = 13;
 
 /** Recolor every terminal for the deck theme (main.js applies the theme). */
 export function setTermTheme(light) {
@@ -23,6 +24,15 @@ export function setTermTheme(light) {
   // CLIs paint some text in fixed RGB picked for dark terminals: let xterm lift it to 4.5:1 on white.
   CONTRAST = light ? 4.5 : 1;
   for (const t of terms) Object.assign(t.options, { theme: THEME, minimumContrastRatio: CONTRAST });
+}
+
+/** Resize every terminal's font size together. */
+export function setTermFontSize(px) {
+  FONT_SIZE = Math.max(10, Math.min(20, px));
+  for (const p of ptys.values()) {
+    p.term.options.fontSize = FONT_SIZE;
+    p.fit?.fit();
+  }
 }
 /** Every open terminal, live or exited, so a theme change reaches them all. */
 const terms = new Set();
@@ -40,7 +50,7 @@ export class Pty {
     Object.assign(this, { host, key, cwd, command, onOutput, onExit, alive: false });
     this.term = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, Menlo, 'D2Coding', monospace",
-      fontSize: 13,
+      fontSize: FONT_SIZE,
       cursorBlink: true,
       scrollback,
       theme: THEME,

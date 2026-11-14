@@ -9,7 +9,8 @@ import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Card } from "./card.js";
 import { openConnections, refreshPool } from "./connections.js";
-import { ptys, setTermTheme } from "./pty.js";
+import { ptys, setTermFontSize, setTermTheme } from "./pty.js";
+import { exportMarkdown } from "./summary.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
 import { DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
@@ -164,6 +165,7 @@ function cycleTheme() {
 
 async function boot() {
   $("theme-btn").onclick = cycleTheme;
+  applyFontSize(Number(localStorage.getItem("mygdeck-font-size") || 14));
   const addBtn = document.getElementById("add-btn");
   addBtn.title = keyLabel(addBtn.title);
   addBtn.innerHTML = icon(ICONS.Plus);
@@ -186,6 +188,13 @@ async function boot() {
   await listen("agent-hook", (e) => app.cards.find((c) => c.agent.id === e.payload.id)?.onHook(e.payload.event, e.payload.data));
   await listen("deck-add-project", (e) => typeof e.payload?.path === "string" && openProject(e.payload.path));
   await listen("fs-change", (e) => app.cards.find((c) => c.id === e.payload)?.onFsChange());
+  getCurrentWindow().onDragDropEvent((e) => {
+    if (e.payload?.type !== "drop" || !e.payload.paths?.length) return;
+    const pos = e.payload.position;
+    const el = pos ? document.elementFromPoint(pos.x / devicePixelRatio, pos.y / devicePixelRatio)?.closest?.(".card") : null;
+    const target = app.cards.find((c) => c.el === el) ?? app.cards[app.active];
+    target?.composer.insertPaths(e.payload.paths);
+  }).catch(() => {});
   refreshPool();
   $("add-btn").onclick = addProject;
   $("add-first").onclick = addProject;
@@ -219,6 +228,29 @@ const NOTIFY_GAP = 5000;
 let notifyAllowed = null;
 let jumpTo = null; // card to show when the user comes back to the window
 
+let audioCtx = null;
+function playChime(kind) {
+  if (localStorage.getItem("mygdeck-sound") === "off") return;
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    const notes = kind === "waiting" ? [587.33, 783.99] : [523.25, 659.25];
+    notes.forEach((freq, idx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.09);
+      gain.gain.exponentialRampToValueAtTime(0.05, now + idx * 0.09 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.09 + 0.22);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now + idx * 0.09);
+      osc.stop(now + idx * 0.09 + 0.24);
+    });
+  } catch {}
+}
+
 async function onStatus(card, prev) {
   if (card.cfg?.muted) return;
   if (!["waiting", "done"].includes(card.status) || card.rotating || prev === "starting") return;
@@ -226,6 +258,7 @@ async function onStatus(card, prev) {
   if (document.hasFocus()) return; // the header strip already shows it
   if (Date.now() - (card.notifiedAt ?? 0) < NOTIFY_GAP) return;
   card.notifiedAt = Date.now();
+  playChime(card.status);
   if (card.status === "waiting" || !jumpTo) jumpTo = card; // a permission prompt outranks a finished turn
   const win = getCurrentWindow();
   win.requestUserAttention(card.status === "waiting" ? UserAttentionType.Critical : UserAttentionType.Informational).catch(() => {});
@@ -321,6 +354,7 @@ async function closeCard(card) {
   }
   const i = app.cards.indexOf(card);
   if (i < 0) return; // closed twice while the exit played
+  rememberRecent(card.root);
   card.dispose();
   app.cards.splice(i, 1);
   app.active = Math.max(0, Math.min(app.active, app.cards.length - 1));
@@ -345,6 +379,7 @@ function layout() {
   });
   deck.hidden = app.cards.length === 0;
   $("empty").hidden = app.cards.length > 0;
+  if (app.cards.length === 0) renderEmptyExtra();
   animateMoves(before);
   renderStrip();
 }
@@ -380,6 +415,18 @@ function renderStrip() {
     b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel("닫기 (Ctrl+F4)")}">${icon(ICONS.X)}</span>`;
     b.querySelector(".cn").textContent = c.name;
     b.onclick = (e) => (e.target.closest(".cx") ? closeCard(c) : setActive(i));
+    b.draggable = true;
+    b.ondragstart = (e) => e.dataTransfer.setData("text/x-card", String(i));
+    b.ondragover = (e) => { if (e.dataTransfer.types.includes("text/x-card")) e.preventDefault(); };
+    b.ondrop = (e) => {
+      const from = Number(e.dataTransfer.getData("text/x-card"));
+      if (!app.cards[from] || from === i) return;
+      e.preventDefault();
+      [app.cards[from], app.cards[i]] = [app.cards[i], app.cards[from]];
+      app.active = i;
+      layout();
+      save();
+    };
     chips.append(b);
   });
   moveGlider();
@@ -480,6 +527,62 @@ async function quickOpen() {
   draw();
 }
 
+function renderEmptyExtra() {
+  const box = $("empty-extra");
+  if (!box) return;
+  box.textContent = "";
+  const recent = loadRecent().slice(0, 5);
+  if (recent.length) {
+    const sec = document.createElement("div");
+    sec.className = "empty-sec";
+    sec.innerHTML = `<span class="empty-lbl">최근 프로젝트</span>`;
+    const row = document.createElement("div");
+    row.className = "empty-pills";
+    for (const p of recent) {
+      const b = document.createElement("button");
+      b.textContent = p.split(/[\\/]/).pop() || p;
+      b.title = p;
+      b.onclick = () => openProject(p);
+      row.append(b);
+    }
+    sec.append(row);
+    box.append(sec);
+  }
+  if (app.adapters?.length) {
+    const sec = document.createElement("div");
+    sec.className = "empty-sec";
+    sec.innerHTML = `<span class="empty-lbl">감지된 에이전트</span>`;
+    const row = document.createElement("div");
+    row.className = "empty-pills";
+    for (const a of app.adapters) {
+      const s = document.createElement("span");
+      s.className = `empty-agent ${a.detected ? "on" : ""}`;
+      s.textContent = `${a.detected ? "●" : "○"} ${a.name}`;
+      row.append(s);
+    }
+    sec.append(row);
+    box.append(sec);
+  }
+}
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem("mygdeck-recent") || "[]"); } catch { return []; }
+}
+
+function rememberRecent(path) {
+  const same = (a, b) => a.replace(/[\\/]+$/, "").toLowerCase() === b.replace(/[\\/]+$/, "").toLowerCase();
+  const next = [path, ...loadRecent().filter((p) => !same(p, path))].slice(0, 8);
+  localStorage.setItem("mygdeck-recent", JSON.stringify(next));
+}
+
+let fontSize = 14;
+function applyFontSize(px) {
+  fontSize = Math.max(11, Math.min(20, Number(px) || 14));
+  localStorage.setItem("mygdeck-font-size", String(fontSize));
+  document.documentElement.style.fontSize = `${fontSize}px`;
+  setTermFontSize(fontSize - 1);
+}
+
 function openPalette() {
   if (overlayKind === "palette") return closeOverlay();
   overlayKind = "palette";
@@ -495,15 +598,24 @@ function openPalette() {
       { label: `${c.name}: 스펙 패널 열기/닫기`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
       { label: `${c.name}: 하단 터미널 열기/닫기`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
       { label: `${c.name}: GUI / CLI 화면 전환`, hint: keyLabel("Ctrl+."), run: () => c.toggleView() },
+      { label: `${c.name}: 대화 내용 마크다운 복사`, hint: "내보내기", run: () => navigator.clipboard.writeText(exportMarkdown(c)).catch(() => {}) },
+      { label: `${c.name}: 이전 턴 상태로 되돌리기 (체크포인트)`, hint: c.turnCheckpoint ? "복원 가능" : "없음", run: () => c.restoreCheckpoint() },
       { label: `${c.name}: 수동 세션 핸드오프 (progress.md → 새 대화)`, hint: "컨텍스트", run: () => c.manualHandoff() },
       { label: `${c.name}: worktree로 하나 더 열기`, hint: "병렬", run: () => c.openWorktree() },
       { label: `${c.name}: 프로젝트 자동화 · 알림 설정`, hint: c.cfg.muted ? "음소거됨" : "훅/검증", run: () => openProjectSettings(c) },
       { label: `${c.name}: 알림 ${c.cfg.muted ? "켜기" : "음소거"}`, hint: "알림", run: () => { c.cfg.muted = !c.cfg.muted; save(); } },
     ] : []),
+    ...loadRecent()
+      .filter((p) => !app.cards.some((card) => card.root.replace(/[\\/]+$/, "").toLowerCase() === p.replace(/[\\/]+$/, "").toLowerCase()))
+      .map((p) => ({ label: `최근 닫은 프로젝트 열기: ${p.split(/[\\/]/).pop()}`, hint: p, run: () => openProject(p) })),
     { label: "전체 보기", hint: keyLabel("Ctrl+0"), run: toggleOverview },
+    { label: "글자 크기 크게 (+1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize + 1) },
+    { label: "글자 크기 작게 (-1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize - 1) },
+    { label: "글자 크기 기본 (14px)", hint: "초기화", run: () => applyFontSize(14) },
     { label: "모바일 대시보드 연결 안내", hint: "원격", run: openMobileGuide },
     { label: "AI 연결 설정", hint: "모델", run: () => $("conn-btn").click() },
     { label: "테마 바꾸기 (다크 / 밝게 / 시스템)", hint: "테마", run: cycleTheme },
+    { label: `알림 효과음 ${localStorage.getItem("mygdeck-sound") === "off" ? "켜기" : "끄기"}`, hint: "오디오", run: () => localStorage.setItem("mygdeck-sound", localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off") },
     { label: "키보드 단축키 보기", hint: "도움말", run: openShortcuts },
   ];
   overlay.innerHTML = `<div class="qo pal"><div class="qo-title">커맨드 팔레트 · ${keyLabel("Ctrl+K")}</div><input class="qo-in" placeholder="실행할 명령이나 프로젝트 이름 입력…" spellcheck="false"><ul class="qo-list"></ul></div>`;

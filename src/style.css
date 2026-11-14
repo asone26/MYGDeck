@@ -759,3 +759,25 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .find-in { width: 200px; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.05); color: var(--text); font: inherit; font-size: 12.5px; outline: none; }
 .find-bar button { padding: 3px 7px; border-radius: 6px; border: 0; background: rgba(var(--ink), 0.08); color: var(--text); font-size: 11px; cursor: pointer; }
 .find-bar button:hover { background: rgba(var(--ink), 0.16); }
+
+/* Code block copy button in GUI answers */
+.s-answer pre { position: relative; }
+.code-copy { position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 7px; border-radius: 5px; border: 1px solid rgba(var(--ink), 0.18); background: var(--card, #171a23); color: var(--faint); cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.s-answer pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; color: var(--text); }
+
+/* Diff split view, project scratchpad note, and empty screen extra info */
+.v-split.on { background: rgba(var(--ink), 0.16); color: var(--text); }
+.vdiff.split { display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
+.vdiff.split .dl.hunk, .vdiff.split .dl.meta { grid-column: 1 / -1; }
+.vdiff.split .dl.del { grid-column: 1; }
+.vdiff.split .dl.add { grid-column: 2; }
+.vdiff.split .dl.ctx { grid-column: 1 / -1; }
+.note-ta { width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px; border: 0; border-top: 1px solid var(--line); background: rgba(var(--ink), 0.03); color: var(--text); font: inherit; font-size: 13px; outline: none; }
+.empty-extra { display: flex; flex-direction: column; gap: 12px; align-items: center; margin: 4px 0 8px; }
+.empty-sec { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.empty-lbl { font-size: 12px; color: var(--faint); }
+.empty-pills { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.empty-pills button { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(var(--ink), 0.05); color: var(--text); cursor: pointer; }
+.empty-pills button:hover { background: rgba(var(--ink), 0.12); }
+.empty-agent { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--faint); }
+.empty-agent.on { color: var(--done); border-color: rgba(111, 191, 192, 0.35); }
