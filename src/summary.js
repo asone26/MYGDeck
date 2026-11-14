@@ -45,12 +45,27 @@ export function renderSummary(card, box) {
   const top = box.scrollTop;
   const atBottom = box.scrollHeight - top - box.clientHeight < 40;
   box.textContent = "";
-  for (const h of card.history ?? []) {
-    const past = el("div", "s-past");
-    if (h.ask) past.append(el("div", "s-ask", h.ask));
-    if (h.texts.length) past.append(answer(h.texts));
-    box.append(past);
+  const hist = card.history ?? [];
+  if (hist.length >= 2) {
+    const outline = el("div", "s-outline");
+    hist.forEach((h, idx) => {
+      const label = h.ask ? `${idx + 1}. ${h.ask.slice(0, 22)}${h.ask.length > 22 ? "…" : ""}` : `${idx + 1}턴`;
+      const b = button(label, () => box.querySelector(`.s-past[data-turn="${idx}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }), "s-jump");
+      b.title = h.ask || "";
+      outline.append(b);
+    });
+    if (card.turnAsk) {
+      outline.append(button("현재", () => box.querySelector(".s-ask.cur")?.scrollIntoView({ behavior: "smooth", block: "start" }), "s-jump cur"));
+    }
+    box.append(outline);
   }
+  hist.forEach((h, idx) => {
+    const past = el("div", "s-past");
+    past.dataset.turn = idx;
+    if (h.ask) past.append(el("div", "s-ask", h.ask));
+    if (h.texts.length) past.append(answer(h.texts, card));
+    box.append(past);
+  });
   renderCurrent(card, box, st);
   box.scrollTop = atBottom ? box.scrollHeight : top;
 }
@@ -84,7 +99,7 @@ function renderCurrent(card, box, st) {
   }
 
   // The user's own instruction stays on top while it runs and after it ends.
-  if (card.turnAsk && st !== "exited") box.append(el("div", "s-ask", card.turnAsk));
+  if (card.turnAsk && st !== "exited") box.append(el("div", "s-ask cur", card.turnAsk));
 
   // While the agent runs: what the CLI shows, in its order (texts, tool runs with failures, the to-do list).
   const running = st === "working" || st === "waiting";
@@ -103,6 +118,7 @@ function renderCurrent(card, box, st) {
     next.append(el("span", "", `다음: ${permissionLine(card.lastTool?.tool, card.lastTool?.detail)}`));
     next.append(
       button("허용", () => card.answerPermission(true), "ok"),
+      button("세션 항상 허용", () => card.answerPermission("always")),
       button("거부", () => card.answerPermission(false)),
     );
     box.append(next);
@@ -121,10 +137,32 @@ function renderCurrent(card, box, st) {
     const replies = st === "done" && !card.menuOpen ? replySuggestions(card.turn.texts) : [];
     // The answer recommends starting over (/clear): one click does it.
     const fresh = st === "done" && !card.menuOpen && suggestsClear(card.turn.texts);
-    if (replies.length || fresh) {
+    const others = st === "done" && !card.menuOpen ? (card.app?.cards ?? []).filter((c) => c !== card) : [];
+    const canRestore = st === "done" && !card.menuOpen && !!card.turnCheckpoint;
+    if (replies.length || fresh || others.length || canRestore) {
       const row = el("div", "s-next s-replies");
       for (const r of replies) row.append(button(r.label, () => card.sendToAgent(r.text)));
       if (fresh) row.append(button(`새 대화 (${card.adapter?.clear_cmd || "다시 시작"})`, () => card.freshSession(), "fresh"));
+      if (canRestore) {
+        const rb = button("되돌리기", () => card.restoreCheckpoint(), "s-restore");
+        rb.title = "이 턴 직전 체크포인트로 되돌리기";
+        row.append(rb);
+      }
+      if (others.length) {
+        const sel = el("select", "s-relay");
+        sel.title = "이 답변을 다른 프로젝트 카드 입력창으로 전달";
+        sel.append(new Option("다른 카드에 전달…", ""));
+        for (const c of others) sel.append(new Option(`→ ${c.name}`, c.id));
+        sel.onchange = () => {
+          const target = others.find((c) => c.id === sel.value);
+          sel.value = "";
+          if (!target) return;
+          const body = card.turn.texts.join("\n\n").slice(0, 2000);
+          target.composer.insert(`[${card.name} 작업 결과]\n${body}\n`);
+          card.app.setActive(card.app.cards.indexOf(target));
+        };
+        row.append(sel);
+      }
       box.append(row);
     }
   } else if (card.statusText !== label) {
@@ -136,7 +174,7 @@ function renderCurrent(card, box, st) {
 function flowEl(card, flow, live) {
   const wrap = el("div", "s-flow");
   flow.forEach((item, i) => {
-    if (item.kind === "text") return wrap.append(answer([item.text]));
+    if (item.kind === "text") return wrap.append(answer([item.text], card));
     const now = live && i === flow.length - 1;
     const list = el("ul", now ? "s-steps now" : "s-steps");
     for (const s of item.items) {
@@ -170,10 +208,26 @@ function todos(list) {
   return box;
 }
 
-function answer(texts) {
+const FILE_REF_RE = /^(?:[\w.-]+\/)*[\w.-]+\.[a-z0-9]{1,8}(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?$/i;
+
+function answer(texts, card = null) {
   const ans = el("div", "s-answer md");
   ans.innerHTML = DOMPurify.sanitize(marked.parse(texts.join("\n\n")));
   ans.addEventListener("click", (e) => e.target.closest("a") && e.preventDefault());
+  if (card?.viewer) {
+    for (const code of ans.querySelectorAll("code")) {
+      if (code.closest("pre")) continue;
+      const raw = code.textContent.trim();
+      if (!FILE_REF_RE.test(raw) || raw.startsWith("http")) continue;
+      const rel = raw.replace(/(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)$/, "");
+      code.classList.add("s-file");
+      code.title = "클릭하면 코드 뷰어로 열기";
+      code.onclick = (e) => {
+        e.stopPropagation();
+        card.viewer.open(rel, "code");
+      };
+    }
+  }
   for (const pre of ans.querySelectorAll("pre")) {
     const btn = el("button", "code-copy", "복사");
     btn.type = "button";

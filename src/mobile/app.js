@@ -35,6 +35,22 @@ const drafts = store.get("mg.drafts", {});
 let lastOk = Date.now();
 let offline = false;
 
+function applyMobileTheme(mode) {
+  const root = document.documentElement;
+  if (mode === "light" || mode === "dark") root.dataset.theme = mode;
+  else delete root.dataset.theme;
+  const btn = $("theme-btn");
+  if (btn) btn.textContent = mode === "light" ? "☀" : mode === "dark" ? "☾" : "◐";
+}
+const THEME_ORDER = ["system", "light", "dark"];
+applyMobileTheme(store.get("mg.theme", "system"));
+$("theme-btn")?.addEventListener("click", () => {
+  const cur = store.get("mg.theme", "system");
+  const next = THEME_ORDER[(THEME_ORDER.indexOf(cur) + 1) % THEME_ORDER.length];
+  store.set("mg.theme", next);
+  applyMobileTheme(next);
+});
+
 /** Server and network errors in words a person can act on. */
 function errText(e) {
   const m = e?.message || String(e);
@@ -454,11 +470,17 @@ class Detail {
     $("ask-head").textContent = head;
     $("ask-head").hidden = !head;
     if (blind) {
-      $("ask-q").textContent = this.screenRead ? "선택지를 읽지 못했습니다. CLI 화면에서 확인하세요." : "선택지를 읽는 중…";
+      $("ask-q").textContent = this.screenRead ? "선택지를 읽지 못했습니다. 빠른 허용 또는 CLI 화면을 이용하세요." : "선택지를 읽는 중…";
+      const allowBtn = document.createElement("button");
+      allowBtn.textContent = "허용 (Enter)";
+      allowBtn.addEventListener("click", () => api("/api/keys", { id: this.id, keys: ["\r"] }).catch((e) => toast(errText(e))));
+      const alwaysBtn = document.createElement("button");
+      alwaysBtn.textContent = "세션 항상 허용";
+      alwaysBtn.addEventListener("click", () => api("/api/keys", { id: this.id, keys: ["\x1b[B", "\r"] }).catch((e) => toast(errText(e))));
       const b = document.createElement("button");
       b.textContent = "CLI 화면 보기";
       b.addEventListener("click", () => this.setTab("cli"));
-      $("ask-choices").replaceChildren(b);
+      $("ask-choices").replaceChildren(allowBtn, alwaysBtn, b);
       return;
     }
     if (!open) return;

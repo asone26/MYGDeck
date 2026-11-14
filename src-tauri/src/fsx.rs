@@ -321,11 +321,27 @@ pub fn git_discard(root: String, rel: String) -> Result<(), String> {
     Ok(())
 }
 
-/// "커밋": commit every change (untracked files too).
+/// "커밋": commit selected files, or every change when `files` is omitted/empty.
 #[tauri::command]
-pub fn git_save(root: String, message: String) -> Result<String, String> {
-    run_git(&root, &["add", "-A"])?;
-    run_git(&root, &["commit", "-m", &message])
+pub fn git_save(root: String, message: String, files: Option<Vec<String>>) -> Result<String, String> {
+    match files {
+        Some(list) if !list.is_empty() => {
+            let mut args = vec!["--literal-pathspecs", "add", "-A", "--"];
+            for f in &list {
+                args.push(f.as_str());
+            }
+            run_git(&root, &args)?;
+            let mut cargs = vec!["--literal-pathspecs", "commit", "-m", message.as_str(), "--"];
+            for f in &list {
+                cargs.push(f.as_str());
+            }
+            run_git(&root, &cargs)
+        }
+        _ => {
+            run_git(&root, &["add", "-A"])?;
+            run_git(&root, &["commit", "-m", &message])
+        }
+    }
 }
 
 /// "푸시": push; a branch without upstream gets one on origin.
@@ -398,6 +414,36 @@ pub fn git_branch_info(root: String) -> Option<BranchInfo> {
     Some(BranchInfo { branch, pr_url })
 }
 
+/// Create and switch to a new git branch (`git checkout -b <name>`).
+#[tauri::command]
+pub fn git_new_branch(root: String, name: String) -> Result<String, String> {
+    let clean = name.trim();
+    if clean.is_empty() || clean.starts_with('-') || clean.contains("..") || clean.chars().any(|c| c.is_whitespace()) {
+        return Err("올바른 브랜치 이름을 입력하세요 (공백·..·선행 - 불가)".into());
+    }
+    run_git(&root, &["checkout", "-b", clean])?;
+    Ok(clean.to_string())
+}
+
+/// Create a GitHub PR draft/PR using `gh pr create`.
+#[tauri::command]
+pub fn git_create_pr(root: String, title: String, body: String) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["pr", "create", "--title", title.trim(), "--body", body.trim(), "--draft"])
+        .current_dir(&root);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = cmd.output().map_err(|e| format!("gh CLI 실행 실패 (GitHub CLI가 설치되어 있는지 확인하세요): {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() { format!("gh pr create 실패 ({})", out.status) } else { err });
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 /// Capture a non-intrusive git snapshot before an agent turn (`git stash create` if dirty, else `HEAD`).
 #[tauri::command]
 pub fn git_checkpoint_create(root: String) -> Option<String> {
@@ -419,6 +465,18 @@ pub fn git_checkpoint_restore(root: String, rev: String) -> Result<(), String> {
         run_git(&root, &["reset", "--hard", rev])?;
     }
     Ok(())
+}
+
+/// Files modified since a checkpoint commit (`git diff --name-only <rev>`).
+#[tauri::command]
+pub fn git_changed_since(root: String, rev: String) -> Vec<String> {
+    let clean = rev.trim();
+    if clean.is_empty() || clean.starts_with('-') || !clean.chars().all(|c| c.is_ascii_hexdigit()) {
+        return vec![];
+    }
+    git(&root, &["diff", "--name-only", clean])
+        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -616,7 +674,7 @@ mod tests {
         g(&["config", "user.email", "t@t"]);
         g(&["config", "user.name", "t"]);
         std::fs::write(dir.join("a.txt"), "v1\n").unwrap();
-        git_save(root.clone(), "first".into()).unwrap();
+        git_save(root.clone(), "first".into(), None).unwrap();
         std::fs::write(dir.join("a.txt"), "v2\nv3\n").unwrap();
         assert_eq!(git_shortstat(root.clone()), Some(DiffStat { files: 1, added: 2, removed: 1 }));
         let wt = git_worktree_add(root.clone()).unwrap();
@@ -654,7 +712,7 @@ mod tests {
         g(&["config", "user.name", "t"]);
         g(&["remote", "add", "origin", &remote.to_string_lossy()]);
         std::fs::write(dir.join("a.txt"), "v1").unwrap();
-        git_save(root.clone(), "first".into()).unwrap();
+        git_save(root.clone(), "first".into(), None).unwrap();
         std::fs::write(dir.join("a.txt"), "v2").unwrap();
         assert!(git_diff(root.clone()).contains("+v2"));
         git_push(root.clone()).unwrap();
@@ -675,7 +733,7 @@ mod tests {
         g(&["config", "core.autocrlf", "false"]);
         std::fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
         std::fs::write(dir.join("gone.txt"), "x\n").unwrap();
-        git_save(root.clone(), "first".into()).unwrap();
+        git_save(root.clone(), "first".into(), None).unwrap();
 
         std::fs::write(dir.join("a.txt"), "one\nTWO\n").unwrap();
         std::fs::remove_file(dir.join("gone.txt")).unwrap();
@@ -718,7 +776,7 @@ mod tests {
         g(&["config", "core.autocrlf", "false"]);
         let orig = (1..=20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n") + "\n";
         std::fs::write(dir.join("m.txt"), &orig).unwrap();
-        git_save(root.clone(), "init".into()).unwrap();
+        git_save(root.clone(), "init".into(), None).unwrap();
 
         let edited = orig.replace("line2\n", "TWO\n").replace("line19\n", "NINETEEN\n");
         std::fs::write(dir.join("m.txt"), &edited).unwrap();
@@ -753,13 +811,36 @@ mod tests {
         g(&["config", "user.name", "t"]);
         g(&["config", "core.autocrlf", "false"]);
         std::fs::write(dir.join("a.txt"), "v1\n").unwrap();
-        git_save(root.clone(), "init".into()).unwrap();
+        git_save(root.clone(), "init".into(), None).unwrap();
 
         std::fs::write(dir.join("a.txt"), "v2\n").unwrap();
         let cp = git_checkpoint_create(root.clone()).unwrap();
         std::fs::write(dir.join("a.txt"), "v3\n").unwrap();
         git_checkpoint_restore(root.clone(), cp).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "v2\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commits_selected_files_only() {
+        let dir = std::env::temp_dir().join(format!("mygdeck-sel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let g = |args: &[&str]| run_git(&root, args).unwrap();
+        g(&["init", "-q"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("a.txt"), "1\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "1\n").unwrap();
+        git_save(root.clone(), "init".into(), None).unwrap();
+
+        std::fs::write(dir.join("a.txt"), "2\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "2\n").unwrap();
+        git_save(root.clone(), "only a".into(), Some(vec!["a.txt".into()])).unwrap();
+        let st = git_status(root.clone());
+        assert_eq!(st.len(), 1);
+        assert_eq!(st[0].path, "b.txt");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

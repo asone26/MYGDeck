@@ -1,19 +1,35 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { mentionFor } from "./logic.js";
 import { poolReady } from "./connections.js";
 
 /** File explorer: files changed in this project (default) or the whole tree (spec 3.2 ①). */
 export class Explorer {
   constructor(card, el) {
-    Object.assign(this, { card, el, mode: "changed", status: new Map() });
+    Object.assign(this, { card, el, mode: "changed", status: new Map(), excluded: new Set(), turnOnly: false, turnFiles: null });
     el.innerHTML = `<div class="xbar"><button data-m="changed" class="on">변경된 파일</button><button data-m="all">전체</button>
+      <button class="x-turn" title="이번 턴에서 바뀐 파일만 보기" hidden>이번 턴</button>
+      <button class="x-all" title="변경된 모든 파일을 한 화면에서 비교" hidden>전체 비교</button>
       <span class="sp"></span>
+      <button class="x-branch" title="새 작업 브랜치 만들기">브랜치</button>
+      <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기">PR</button>
       <button class="x-save" title="바뀐 내용을 커밋합니다 · 메시지는 자동 생성">커밋</button>
       <button class="x-push" title="커밋을 원격 저장소로 올립니다 (git push)">푸시</button></div>
       <div class="xmsg" hidden></div><div class="xlist"></div>`;
     this.list = el.querySelector(".xlist");
     this.msg = el.querySelector(".xmsg");
-    el.querySelector(".x-save").onclick = () => this.commit();
+    this.saveBtn = el.querySelector(".x-save");
+    this.allBtn = el.querySelector(".x-all");
+    this.turnBtn = el.querySelector(".x-turn");
+    this.saveBtn.onclick = () => this.commit();
+    this.allBtn.onclick = () => this.card.viewer.openAllDiffs();
+    this.turnBtn.onclick = () => {
+      this.turnOnly = !this.turnOnly;
+      this.turnBtn.classList.toggle("on", this.turnOnly);
+      this.render();
+    };
+    el.querySelector(".x-branch").onclick = () => this.newBranch();
+    el.querySelector(".x-pr").onclick = () => this.createPr();
     el.querySelector(".x-push").onclick = () => this.git("git_push", {}, "푸시했습니다");
     el.querySelector(".xbar").addEventListener("click", (e) => {
       const m = e.target.dataset?.m;
@@ -86,23 +102,72 @@ export class Explorer {
   setMode(m) {
     this.mode = m;
     for (const b of this.el.querySelectorAll(".xbar button[data-m]")) b.classList.toggle("on", b.dataset.m === m);
+    this.syncControls();
     this.render();
+  }
+
+  syncControls() {
+    const total = this.status.size;
+    const selected = [...this.status.keys()].filter((p) => !this.excluded.has(p)).length;
+    this.turnBtn.hidden = this.mode !== "changed" || !this.card.turnCheckpoint || total === 0;
+    if (this.turnBtn.hidden) this.turnOnly = false;
+    this.turnBtn.classList.toggle("on", this.turnOnly);
+    this.allBtn.hidden = this.mode !== "changed" || total < 2;
+    this.saveBtn.classList.toggle("on", selected > 0);
+    this.saveBtn.disabled = total > 0 && selected === 0;
+    this.saveBtn.textContent = total > 0 && selected < total ? `커밋 (${selected}/${total})` : "커밋";
   }
 
   /** Commit with a message from the free AI pool; without one, a message listing the changed files. */
   async commit() {
     if (!this.status.size) return this.say("바뀐 내용이 없습니다");
-    const files = [...this.status.keys()];
+    const allFiles = [...this.status.keys()];
+    const files = allFiles.filter((f) => !this.excluded.has(f));
+    if (!files.length) return this.say("커밋할 파일을 선택하세요");
     let message = `Update ${files.slice(0, 3).join(", ")}${files.length > 3 ? ` and ${files.length - 3} more` : ""}`;
     if (poolReady()) {
       this.say("커밋 메시지 생성 중…");
       const diff = (await invoke("git_diff", { root: this.card.root }).catch(() => "")).slice(0, 8000);
-      const prompt = `Write one git commit message line (Conventional Commits, English, max 72 chars) for these changes. Reply with the line only.\n\nFiles:\n${[...this.status].map(([p, c]) => `${c} ${p}`).join("\n")}\n\nDiff:\n${diff}`;
+      const prompt = `Write one git commit message line (Conventional Commits, English, max 72 chars) for these changes. Reply with the line only.\n\nFiles:\n${files.map((p) => `${this.status.get(p)} ${p}`).join("\n")}\n\nDiff:\n${diff}`;
       const a = await invoke("ai_ask", { prompt, search: false }).catch(() => null);
       const line = a?.text.split("\n").map((l) => l.replace(/^[`"'\s]+|[`"'\s]+$/g, "")).find(Boolean);
       if (line) message = line.slice(0, 100);
     }
-    this.git("git_save", { message }, `커밋했습니다: ${message}`);
+    this.git("git_save", { message, files: files.length < allFiles.length ? files : null }, `커밋했습니다: ${message}`);
+  }
+
+  async newBranch() {
+    const name = window.prompt("새 작업 브랜치 이름을 입력하세요 (예: feat/login):");
+    if (!name?.trim()) return;
+    await this.git("git_new_branch", { name: name.trim() }, `브랜치 전환: ${name.trim()}`);
+  }
+
+  async createPr() {
+    const info = await invoke("git_branch_info", { root: this.card.root }).catch(() => null);
+    if (!info?.branch || info.branch === "main" || info.branch === "master") {
+      return this.say("main/master가 아닌 작업 브랜치에서 PR을 만들 수 있습니다", true);
+    }
+    let title = `feat: ${info.branch}`;
+    let body = `Branch: ${info.branch}`;
+    if (poolReady()) {
+      this.say("PR 제목·본문 생성 중…");
+      const diff = (await invoke("git_diff", { root: this.card.root }).catch(() => "")).slice(0, 6000);
+      const askText = `Write a concise GitHub PR title on line 1 and a short bulleted summary on the following lines for branch "${info.branch}".\n\nDiff:\n${diff}`;
+      const a = await invoke("ai_ask", { prompt: askText, search: false }).catch(() => null);
+      const lines = a?.text?.split("\n").map((l) => l.trim()).filter(Boolean) ?? [];
+      if (lines.length) {
+        title = lines[0].replace(/^#+\s*/, "").slice(0, 100);
+        body = lines.slice(1).join("\n") || title;
+      }
+    }
+    try {
+      this.say("PR 초안 생성 중…");
+      const url = await invoke("git_create_pr", { root: this.card.root, title, body });
+      this.say(`PR 초안 생성됨: ${url}`);
+      if (/^https?:\/\//.test(url)) openUrl(url).catch(() => {});
+    } catch (e) {
+      this.say(`PR 실패: ${String(e).split("\n")[0]}`, true);
+    }
   }
 
   /** Commit / push, with plain-language results instead of git output. */
@@ -126,12 +191,17 @@ export class Explorer {
   }
 
   async refresh() {
-    const [st, ahead] = await Promise.all([
+    const [st, ahead, since] = await Promise.all([
       invoke("git_status", { root: this.card.root }).catch(() => []),
       invoke("git_ahead", { root: this.card.root }).catch(() => 0),
+      this.card.turnCheckpoint
+        ? invoke("git_changed_since", { root: this.card.root, rev: this.card.turnCheckpoint }).catch(() => null)
+        : null,
     ]);
+    this.turnFiles = since ? new Set(since) : null;
     this.status = new Map(st.map((s) => [s.path, s.code]));
-    this.el.querySelector(".x-save").classList.toggle("on", st.length > 0);
+    for (const p of this.excluded) if (!this.status.has(p)) this.excluded.delete(p);
+    this.syncControls();
     this.el.querySelector(".x-push").classList.toggle("on", ahead > 0);
     this.el.querySelector(".x-push").title = `커밋을 원격 저장소로 올립니다 (git push)${ahead ? ` · 올릴 커밋 ${ahead}개` : ""}`;
     this.card.setFileCount(st.length);
@@ -143,11 +213,29 @@ export class Explorer {
   render() {
     this.list.textContent = "";
     if (this.mode === "all") return this.expand(this.list, "", 0);
-    if (!this.status.size) {
-      this.list.innerHTML = `<div class="muted">변경된 파일이 없습니다</div>`;
+    const entries = [...this.status]
+      .filter(([p]) => !this.turnOnly || !this.turnFiles || this.turnFiles.has(p))
+      .sort();
+    if (!entries.length) {
+      this.list.innerHTML = `<div class="muted">${this.turnOnly ? "이번 턴에 바뀐 파일이 없습니다" : "변경된 파일이 없습니다"}</div>`;
       return;
     }
-    for (const [p, code] of [...this.status].sort()) this.list.append(node(p, p, false, code, 0));
+    for (const [p, code] of entries) {
+      const row = node(p, p, false, code, 0);
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "xchk";
+      chk.checked = !this.excluded.has(p);
+      chk.title = "커밋에 포함";
+      chk.onclick = (e) => {
+        e.stopPropagation();
+        if (chk.checked) this.excluded.delete(p);
+        else this.excluded.add(p);
+        this.syncControls();
+      };
+      row.prepend(chk);
+      this.list.append(row);
+    }
   }
 
   async expand(container, rel, depth) {

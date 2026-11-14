@@ -14,7 +14,8 @@ import { elapsed, renderSummary, summaryLines } from "./summary.js";
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
+  <span class="badge"></span><span class="stext"></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
+  <button class="b-mute" title="알림 끄기/켜기"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
   <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
@@ -51,6 +52,7 @@ export class Card {
     this.menuOpen = false;
     this.menuChoices = [];
     this.queue = []; // inputs typed while the agent works, sent one per finished turn
+    this.stats = { turns: 0, totalMs: 0 };
     this.el = document.createElement("section");
     this.el.className = "card";
     this.el.style.setProperty("--pc", this.color);
@@ -64,8 +66,16 @@ export class Card {
     this.$(".b-shell").onclick = () => this.toggleShell();
     this.$(".b-preview").onclick = () => this.previewUrl && openUrl(this.previewUrl);
     this.$(".b-branch").onclick = () => this.prUrl && openUrl(this.prUrl);
+    this.$(".b-run").onclick = () => this.quickRun();
     this.$(".b-test").onclick = () => this.onTestBadgeClick();
     this.$(".ctx").onclick = () => this.manualHandoff();
+    this.muteBtn = this.$(".b-mute");
+    this.muteBtn.onclick = () => {
+      this.cfg.muted = !this.cfg.muted || undefined;
+      this.syncMute();
+      this.app.save();
+    };
+    this.syncMute();
     this.$(".shell-send").onclick = () => this.sendShellOutput();
     const grip = this.$(".shell-grip");
     grip.onpointerdown = (e) => {
@@ -171,11 +181,21 @@ export class Card {
     const pick = this.pick;
     // Composer rebuilds its row on agent switch, so re-attach the picker to its bottom-left each time.
     this.$(".composer").prepend(pick);
-    const others = this.app.adapters.filter((a) => a.detected && a.name !== this.adapter?.name);
+    const others = this.app.adapters.filter((a) => a.name !== this.adapter?.name);
     pick.textContent = "";
-    pick.append(new Option(this.adapter?.name ?? (this.cfg.command ? "custom" : "shell"), ""));
-    if (this.adapter) pick.append(new Option("↻ 새 세션으로 이어가기", "@renew"), ...others.map((a) => new Option(`→ ${a.name}(으)로 바꾸기`, a.name)));
-    if (this.adapter) pick.append(new Option("⑂ worktree로 하나 더 열기", "@worktree"));
+    const curLabel = this.adapter ? `${this.adapter.name}${this.adapter.detected ? "" : " (미설치)"}` : (this.cfg.command ? "custom" : "shell");
+    pick.append(new Option(curLabel, ""));
+    if (this.adapter) {
+      pick.append(
+        new Option("↻ 새 세션으로 이어가기", "@renew"),
+        ...others.map((a) => {
+          const opt = new Option(`→ ${a.name}${a.detected ? "" : " (미설치)"}(으)로 바꾸기`, a.name);
+          if (!a.detected) opt.disabled = true;
+          return opt;
+        }),
+      );
+      pick.append(new Option("⑂ worktree로 하나 더 열기", "@worktree"));
+    }
     // Cards opened by "⑂": bring the work home or throw the copy away (git checks it really is one).
     if (/-wt\d+$/.test(this.root)) pick.append(new Option("⇢ 원래 폴더에 합치기", "@wt-merge"), new Option("✕ 이 worktree 버리기", "@wt-remove"));
     pick.disabled = !this.adapter;
@@ -195,6 +215,13 @@ export class Card {
     this.$(".idx").textContent = `#${i + 1}`;
   }
 
+  syncMute() {
+    const muted = !!this.cfg.muted;
+    this.muteBtn.innerHTML = icon(muted ? ICONS.BellOff : ICONS.Bell);
+    this.muteBtn.classList.toggle("muted", muted);
+    this.muteBtn.title = muted ? "알림 꺼짐 · 클릭하면 다시 켜기" : "이 카드 알림 끄기";
+  }
+
   setStatus(status, text) {
     const prev = this.status;
     Object.assign(this, { status, statusText: text });
@@ -208,6 +235,14 @@ export class Card {
     badge.classList.toggle("pop", prev !== status);
     if (status === "done" && prev === "working") {
       this.lastTurnElapsed = this.turnStart ? elapsed(this.turnStart) : null;
+      if (this.turnStart) {
+        this.stats.turns += 1;
+        this.stats.totalMs += Math.max(0, Date.now() - this.turnStart);
+        const sec = Math.round(this.stats.totalMs / 1000);
+        const m = Math.floor(sec / 60), s = sec % 60;
+        const tot = m ? (s ? `${m}분 ${s}초` : `${m}분`) : `${s}초`;
+        this.$(".name").title = `${this.root}\n이번 세션: ${this.stats.turns}턴 · 누적 ${tot}`;
+      }
       this.el.classList.remove("flash");
       void this.el.offsetWidth; // restart the sweep
       this.el.classList.add("flash");
@@ -233,14 +268,33 @@ export class Card {
     box.hidden = !show;
     this.agent?.setCovered(show);
     const limit = contextLimit(this.adapter, this.contextModel);
-    this.$(".ctx").textContent = limit && this.contextTokens ? `${Math.round((this.contextTokens / limit) * 100)}%` : "";
+    const ctxBtn = this.$(".ctx");
+    if (limit && this.contextTokens) {
+      const pct = Math.min(100, Math.round((this.contextTokens / limit) * 100));
+      const rotPct = Math.round(ROTATE_AT * 100);
+      ctxBtn.textContent = `${pct}%`;
+      ctxBtn.style.setProperty("--ctx-pct", `${pct}%`);
+      ctxBtn.dataset.level = pct >= rotPct ? "hot" : pct >= 70 ? "warn" : "";
+      const kUsed = Math.round(this.contextTokens / 1000);
+      const kLimit = Math.round(limit / 1000);
+      ctxBtn.title = `${this.contextModel || this.adapter?.name || "모델"} · ${kUsed}k / ${kLimit}k (${pct}%) · ${rotPct}%에서 자동 회전 · 클릭하면 지금 핸드오프`;
+    } else {
+      ctxBtn.textContent = "";
+      ctxBtn.style.removeProperty("--ctx-pct");
+      delete ctxBtn.dataset.level;
+    }
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
     btn.innerHTML = this.view === "cli" ? `${icon(ICONS.LayoutList)}<span class="lbl">GUI 보기</span>` : `${icon(ICONS.SquareTerminal)}<span class="lbl">CLI 보기</span>`;
     btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
-    if (loading) box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
-    else if (show) renderSummary(this, box);
+    if (this.adapter && !this.adapter.detected && (loading || this.status === "exited")) {
+      box.innerHTML = `<div class="s-diag"><b>${this.adapter.name} CLI를 찾을 수 없습니다</b><p>실행 명령(<code>${this.adapter.launch}</code>)이 PATH에 설치되어 있는지 확인하거나, 아래 에이전트 선택에서 설치된 다른 에이전트로 바꾸세요.</p></div>`;
+    } else if (loading) {
+      box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
+    } else if (show) {
+      renderSummary(this, box);
+    }
     if (wasFocused && show) box.focus();
     this.updatePeek();
   }
@@ -256,8 +310,15 @@ export class Card {
     else this.agent.term.focus();
   }
 
-  /** Claude's permission menu: Enter takes the highlighted "Yes", Esc rejects. */
+  /** Claude's permission menu: Enter takes "Yes", "always" picks the session-allow option, Esc rejects. */
   answerPermission(allow) {
+    if (allow === "always") {
+      const alwaysChoice = (this.menuChoices ?? []).find((c) => /don't ask|always|항상|session/i.test(c.label));
+      const keys = alwaysChoice?.keys ?? ["\x1b[B", "\r"];
+      keys.forEach((k, i) => setTimeout(() => this.agent.write(k), i * 60));
+      this.setStatus("working", "이번 세션 항상 허용 · 계속 진행");
+      return;
+    }
     this.agent.write(allow ? "\r" : "\x1b");
     this.setStatus("working", allow ? "허용함 · 계속 진행" : "거부함");
   }
@@ -291,7 +352,7 @@ export class Card {
     }
   }
 
-  /** Open the file panel on the changed files, and the first one in the review view. */
+  /** Open the file panel on the changed files, and the stacked or first diff in the review view. */
   showChanges() {
     if (this.density !== "full") {
       this.setDensity("full");
@@ -299,6 +360,7 @@ export class Card {
     }
     this.$(".m-files").open = true;
     this.explorer.setMode("changed");
+    if (this.explorer.status.size > 1) return this.viewer.openAllDiffs();
     const first = [...this.explorer.status.keys()].sort()[0];
     if (first) this.viewer.open(first, "diff");
   }
@@ -531,10 +593,28 @@ export class Card {
     if (ok) this.rotate(this.adapter, "사용자가 수동 핸드오프를 요청했습니다.");
   }
 
+  /** One-click run/verify: runs `post_turn_cmd`, or auto-detects `package.json` dev/start/test script. */
+  async quickRun() {
+    if (this.cfg.post_turn_cmd?.trim()) return this.runPostTurnTest();
+    try {
+      const pkg = JSON.parse(await invoke("read_file", { root: this.root, rel: "package.json" }));
+      const s = pkg?.scripts ?? {};
+      const dev = s.dev ? "npm run dev" : s.start ? "npm start" : null;
+      if (dev) {
+        if (this.$(".shell").hidden) this.toggleShell();
+        setTimeout(() => this.shell?.write(`${dev}\r`), 250);
+        return;
+      }
+      if (s.test) return this.runPostTurnTest("npm test");
+    } catch {}
+    if (this.$(".shell").hidden) this.toggleShell();
+  }
+
   /** Run project-configured verification command after an agent turn ends. */
-  async runPostTurnTest() {
-    const cmd = this.cfg.post_turn_cmd?.trim();
+  async runPostTurnTest(cmdOverride = null) {
+    const cmd = (cmdOverride ?? this.cfg.post_turn_cmd)?.trim();
     if (!cmd) return;
+    this.lastTestCmd = cmd;
     const seq = (this.testSeq = (this.testSeq ?? 0) + 1);
     const btn = this.$(".b-test");
     btn.hidden = false;
@@ -559,9 +639,10 @@ export class Card {
 
   onTestBadgeClick() {
     const res = this.lastTestResult;
+    const cmd = this.lastTestCmd || this.cfg.post_turn_cmd;
     if (!res) return;
-    if (res.ok) return message(`명령 통과: ${this.cfg.post_turn_cmd}\n\n${res.output || "(출력 없음)"}`, { kind: "info" });
-    this.composer.insert(`다음 검증 명령이 실패했습니다 (\`${this.cfg.post_turn_cmd}\`, 종료 코드 ${res.code}). 실패 원인을 확인하고 고쳐주세요:\n\`\`\`\n${res.output}\n\`\`\`\n`);
+    if (res.ok) return message(`명령 통과: ${cmd}\n\n${res.output || "(출력 없음)"}`, { kind: "info" });
+    this.composer.insert(`다음 검증 명령이 실패했습니다 (\`${cmd}\`, 종료 코드 ${res.code}). 실패 원인을 확인하고 고쳐주세요:\n\`\`\`\n${res.output}\n\`\`\`\n`);
   }
 
   /** Queueing needs an exact turn end; a silence guess could fire mid-work. */
@@ -790,7 +871,7 @@ export class Card {
     try {
       await invoke("git_checkpoint_restore", { root: this.root, rev: this.turnCheckpoint });
       this.turnCheckpoint = null;
-      this.explorer.refreshGit();
+      this.explorer.refresh();
       this.viewer.reload();
     } catch (e) {
       message(`체크포인트 복원 실패: ${e}`, { kind: "error" });

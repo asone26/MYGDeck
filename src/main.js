@@ -464,7 +464,8 @@ function renderOverview() {
     t.innerHTML = `<div class="th"><span class="dot"></span><b></b><span class="cb"></span></div><div class="tt"></div><pre class="tp"></pre>`;
     t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
     t.querySelector(".cb").innerHTML = statusIcon(c.status);
-    t.querySelector(".tt").textContent = c.statusText;
+    const statText = c.stats?.turns ? ` · ${c.stats.turns}턴 (${Math.max(1, Math.round(c.stats.totalMs / 60000))}분)` : "";
+    t.querySelector(".tt").textContent = `${c.statusText}${statText}`;
     t.querySelector(".tp").textContent = c.peek.join("\n");
     t.onclick = () => {
       closeOverlay();
@@ -740,10 +741,40 @@ function openFind() {
     bar = document.createElement("div");
     bar.id = "find-bar";
     bar.className = "find-bar";
-    bar.innerHTML = `<input class="find-in" placeholder="화면 내 검색…" spellcheck="false"><button class="find-prev" title="이전 (Shift+Enter)">▲</button><button class="find-next" title="다음 (Enter)">▼</button><button class="find-x" title="닫기 (Esc)">✕</button>`;
+    bar.innerHTML = `<div class="find-row"><input class="find-in" placeholder="전체 대화 · 화면 검색…" spellcheck="false"><button class="find-prev" title="이전 (Shift+Enter)">▲</button><button class="find-next" title="다음 (Enter)">▼</button><button class="find-x" title="닫기 (Esc)">✕</button></div><div class="find-hits" hidden></div>`;
     document.body.append(bar);
     const input = bar.querySelector(".find-in");
+    const hitsBox = bar.querySelector(".find-hits");
     const run = (back = false) => input.value && window.find(input.value, false, back, true, false, false, false);
+    const renderHits = () => {
+      const q = input.value.trim().toLowerCase();
+      hitsBox.textContent = "";
+      if (q.length < 2) { hitsBox.hidden = true; return; }
+      const hits = [];
+      app.cards.forEach((c, ci) => {
+        (c.history ?? []).forEach((h, ti) => {
+          const text = [h.ask, ...(h.texts ?? [])].filter(Boolean).join(" ");
+          const pos = text.toLowerCase().indexOf(q);
+          if (pos >= 0) hits.push({ ci, c, ti, cur: false, snippet: text.slice(Math.max(0, pos - 16), pos + 44) });
+        });
+        const curText = [c.turnAsk, ...(c.turn?.texts ?? [])].filter(Boolean).join(" ");
+        const pos = curText.toLowerCase().indexOf(q);
+        if (pos >= 0) hits.push({ ci, c, ti: -1, cur: true, snippet: curText.slice(Math.max(0, pos - 16), pos + 44) });
+      });
+      hitsBox.hidden = !hits.length;
+      for (const h of hits.slice(0, 8)) {
+        const b = document.createElement("button");
+        b.className = "find-hit";
+        b.innerHTML = `<b>${h.c.name}</b><span>${h.cur ? "현재 턴" : `${h.ti + 1}턴`} · ${h.snippet.replace(/</g, "&lt;")}</span>`;
+        b.onclick = () => {
+          setActive(h.ci);
+          const sel = h.cur ? ".s-ask.cur" : `.s-past[data-turn="${h.ti}"]`;
+          requestAnimationFrame(() => h.c.el.querySelector(sel)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        };
+        hitsBox.append(b);
+      }
+    };
+    input.oninput = renderHits;
     input.onkeydown = (e) => {
       if (e.key === "Escape") { e.preventDefault(); bar.hidden = true; app.cards[app.active]?.focusDefault(); }
       else if (e.key === "Enter") { e.preventDefault(); run(e.shiftKey); }

@@ -118,13 +118,14 @@ export class Viewer {
   syncReview() {
     if (!this.isOpen) return;
     const list = this.changed();
-    const i = list.indexOf(this.rel);
-    const code = this.card.explorer.status.get(this.rel);
-    this.el.querySelector(".vreview").hidden = i < 0 && this.mode !== "diff";
+    const i = this.allDiffs ? -1 : list.indexOf(this.rel);
+    const code = this.allDiffs ? null : this.card.explorer.status.get(this.rel);
+    this.el.querySelector(".vreview").hidden = !this.allDiffs && i < 0 && this.mode !== "diff";
+    this.el.querySelector(".vseg").hidden = !!this.allDiffs;
     for (const b of this.el.querySelectorAll(".vseg button")) b.classList.toggle("on", b.dataset.v === this.mode);
-    this.el.querySelector(".vpos").textContent = i < 0 ? `${list.length}개` : `${i + 1}/${list.length}`;
-    this.el.querySelector(".vnav").hidden = !list.length;
-    this.revertBtn.hidden = i < 0;
+    this.el.querySelector(".vpos").textContent = this.allDiffs ? `${list.length}개 전체` : i < 0 ? `${list.length}개` : `${i + 1}/${list.length}`;
+    this.el.querySelector(".vnav").hidden = this.allDiffs || !list.length;
+    this.revertBtn.hidden = this.allDiffs || i < 0;
     this.revertBtn.classList.remove("armed");
     this.revertBtn.textContent = code === "A" ? "새 파일 삭제" : "되돌리기";
     this.revertBtn.title = code === "A" ? "이 파일을 지웁니다 (마지막 커밋에 없는 새 파일)" : "이 파일을 마지막 커밋 상태로 되돌립니다";
@@ -136,11 +137,26 @@ export class Viewer {
 
   /** mode "diff" opens the review view when the file has changes; a deleted file only has that view. */
   async open(rel, mode = "code") {
+    this.allDiffs = false;
     this.rel = rel;
     const code = this.card.explorer.status.get(rel);
     this.mode = code && (mode === "diff" || code === "D") ? "diff" : "code";
     this.el.hidden = false;
     this.el.querySelector(".vpath").textContent = rel;
+    await this.load(false);
+    this.el.focus();
+  }
+
+  /** Stacked diff view for all changed files in one scrollable panel. */
+  async openAllDiffs() {
+    const list = this.changed();
+    if (!list.length) return;
+    if (list.length === 1) return this.open(list[0], "diff");
+    this.allDiffs = true;
+    this.rel = null;
+    this.mode = "diff";
+    this.el.hidden = false;
+    this.el.querySelector(".vpath").textContent = `전체 변경 (${list.length}개 파일)`;
     await this.load(false);
     this.el.focus();
   }
@@ -158,7 +174,8 @@ export class Viewer {
     this.diff.hidden = !diff;
     this.gutter.hidden = this.code.parentElement.hidden = diff;
     if (diff) {
-      await this.loadDiff();
+      if (this.allDiffs) await this.loadAllDiffs();
+      else await this.loadDiff();
       this.body.scrollTop = keepScroll ? top : 0;
       this.body.scrollLeft = keepScroll ? left : 0;
       return;
@@ -198,32 +215,73 @@ export class Viewer {
     }
   }
 
-  renderDiff(rows, hljs) {
-    const add = rows.filter((r) => r.kind === "add").length;
-    const del = rows.filter((r) => r.kind === "del").length;
-    this.el.querySelector(".vstat").innerHTML = add || del ? `<b class="a">+${add}</b> <b class="d">−${del}</b>` : "";
-    if (!rows.length) {
-      this.diff.innerHTML = `<div class="dempty">마지막 커밋과 같습니다</div>`;
+  async loadAllDiffs() {
+    const { root } = this.card;
+    const list = this.changed();
+    if (!list.length) {
+      this.el.querySelector(".vstat").textContent = "";
+      this.diff.innerHTML = `<div class="dempty">변경된 파일이 없습니다</div>`;
       return;
     }
-    const ext = this.rel.split(".").pop().toLowerCase();
-    const lang = hljs?.getLanguage(ext) && rows.length < DIFF_ROWS ? ext : null;
+    const hljs = await loadHljs();
+    const entries = await Promise.all(list.map(async (rel) => {
+      try {
+        const d = await invoke("file_diff", { root, rel });
+        const untracked = !!d.untracked;
+        const rows = untracked ? addedRows(await invoke("read_file", { root, rel })) : parseDiff(d.diff);
+        return { rel, rows, untracked };
+      } catch (e) {
+        return { rel, rows: [{ kind: "meta", text: `열 수 없습니다: ${e}` }], untracked: false };
+      }
+    }));
+    if (!this.allDiffs || this.mode !== "diff") return;
+    let totalAdd = 0, totalDel = 0, maxNum = 0;
+    for (const e of entries) {
+      for (const r of e.rows) {
+        if (r.kind === "add") totalAdd++;
+        else if (r.kind === "del") totalDel++;
+        if (r.old > maxNum) maxNum = r.old;
+        if (r.new > maxNum) maxNum = r.new;
+      }
+    }
+    this.el.querySelector(".vstat").innerHTML = totalAdd || totalDel ? `<b class="a">+${totalAdd}</b> <b class="d">−${totalDel}</b>` : "";
+    this.diff.style.setProperty("--lnw", `${Math.max(String(maxNum).length, 2)}ch`);
+    const perFileLimit = Math.max(200, Math.floor(DIFF_ROWS / Math.max(1, entries.length)));
+    this.diff.innerHTML = entries.map((e) => {
+      const a = e.rows.filter((r) => r.kind === "add").length;
+      const d = e.rows.filter((r) => r.kind === "del").length;
+      const stat = a || d ? `<span class="df-stat"><b class="a">+${a}</b> <b class="d">−${d}</b></span>` : "";
+      const body = e.rows.length
+        ? this.diffRowsHtml(e.rows, hljs, e.rel, e.untracked, perFileLimit)
+        : `<div class="dl meta"><span class="dt">변경 없음</span></div>`;
+      return `<div class="df-sec" data-rel="${esc(e.rel)}"><div class="dl file-head"><span class="df-name">${esc(e.rel)}</span>${stat}<button class="df-open" data-rel="${esc(e.rel)}">파일 열기</button></div>${body}</div>`;
+    }).join("");
+    for (const b of this.diff.querySelectorAll(".df-open")) {
+      b.onclick = () => this.open(b.dataset.rel, "diff");
+    }
+    this.wireHunkDiscard();
+  }
+
+  diffRowsHtml(rows, hljs, rel, untracked, limit = DIFF_ROWS) {
+    const ext = rel.split(".").pop().toLowerCase();
+    const lang = hljs?.getLanguage(ext) && rows.length < limit ? ext : null;
     const color = (t) => (lang ? hljs.highlight(t, { language: lang, ignoreIllegals: true }).value : esc(t));
-    const width = String(Math.max(0, ...rows.map((r) => Math.max(r.old ?? 0, r.new ?? 0)))).length;
-    this.diff.style.setProperty("--lnw", `${Math.max(width, 2)}ch`);
     let hunkIdx = 0;
-    const html = rows.slice(0, DIFF_ROWS).map((r) => {
+    const html = rows.slice(0, limit).map((r) => {
       if (r.kind === "hunk") {
         const idx = hunkIdx++;
-        const btn = this.untrackedDiff ? "" : `<button class="hunk-discard" data-hunk="${idx}" title="이 블록만 마지막 커밋으로 되돌리기">되돌리기</button>`;
+        const btn = untracked ? "" : `<button class="hunk-discard" data-rel="${esc(rel)}" data-hunk="${idx}" title="이 블록만 마지막 커밋으로 되돌리기">되돌리기</button>`;
         return `<div class="dl hunk"><span class="ln"></span><span class="ln n"></span><span class="dm"></span><span class="dt">⋯ ${esc(r.text)}${btn}</span></div>`;
       }
       if (r.kind === "meta") return `<div class="dl meta"><span class="dt">${esc(r.text)}</span></div>`;
       const mark = r.kind === "add" ? "+" : r.kind === "del" ? "−" : "";
       return `<div class="dl ${r.kind}"><span class="ln">${r.old ?? ""}</span><span class="ln n">${r.new ?? ""}</span><span class="dm">${mark}</span><span class="dt">${color(r.text)}</span></div>`;
     });
-    if (rows.length > DIFF_ROWS) html.push(`<div class="dl meta"><span class="dt">변경이 많아 앞쪽 ${DIFF_ROWS}줄만 보여 줍니다 · 코드 화면에서 전체를 보세요</span></div>`);
-    this.diff.innerHTML = html.join("");
+    if (rows.length > limit) html.push(`<div class="dl meta"><span class="dt">변경이 많아 앞쪽 ${limit}줄만 보여 줍니다 · 파일을 열어 전체를 보세요</span></div>`);
+    return html.join("");
+  }
+
+  wireHunkDiscard() {
     for (const btn of this.diff.querySelectorAll(".hunk-discard")) {
       btn.onclick = async () => {
         if (!btn.dataset.armed) {
@@ -234,10 +292,10 @@ export class Viewer {
         }
         btn.disabled = true;
         try {
-          await invoke("git_discard_hunk", { root: this.card.root, rel: this.rel, hunkIndex: Number(btn.dataset.hunk) });
-          await this.loadDiff();
-          this.card.explorer?.refreshGit?.();
-          this.card.refreshDiffStat?.();
+          await invoke("git_discard_hunk", { root: this.card.root, rel: btn.dataset.rel || this.rel, hunkIndex: Number(btn.dataset.hunk) });
+          await (this.allDiffs ? this.loadAllDiffs() : this.loadDiff());
+          this.card.explorer?.refresh?.();
+          this.card.refreshDiff?.();
         } catch (e) {
           btn.disabled = false;
           btn.textContent = "실패";
@@ -245,6 +303,20 @@ export class Viewer {
         }
       };
     }
+  }
+
+  renderDiff(rows, hljs) {
+    const add = rows.filter((r) => r.kind === "add").length;
+    const del = rows.filter((r) => r.kind === "del").length;
+    this.el.querySelector(".vstat").innerHTML = add || del ? `<b class="a">+${add}</b> <b class="d">−${del}</b>` : "";
+    if (!rows.length) {
+      this.diff.innerHTML = `<div class="dempty">마지막 커밋과 같습니다</div>`;
+      return;
+    }
+    const width = String(Math.max(0, ...rows.map((r) => Math.max(r.old ?? 0, r.new ?? 0)))).length;
+    this.diff.style.setProperty("--lnw", `${Math.max(width, 2)}ch`);
+    this.diff.innerHTML = this.diffRowsHtml(rows, hljs, this.rel, this.untrackedDiff);
+    this.wireHunkDiscard();
   }
 
   render(text, changed, hljs) {

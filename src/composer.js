@@ -4,23 +4,34 @@ import { poolReady } from "./connections.js";
 import { DEFAULT_SNIPPETS, ROUTE_CHIP, fuzzyFilter, keyLabel, mentionFor, mentionToken, nextRoute, routeInput } from "./logic.js";
 import { ICONS, icon } from "./icons.js";
 
+const SNIP_KEY = "mygdeck.snippets";
+const loadSnippets = () => { try { return JSON.parse(localStorage.getItem(SNIP_KEY) || "[]"); } catch { return []; } };
+const saveSnippets = (list) => { try { localStorage.setItem(SNIP_KEY, JSON.stringify(list)); } catch {} };
+
 /** Input helper under the CLI (spec 3.2 ⑤). Everything typed here ends up in the CLI unchanged. */
 export class Composer {
   constructor(card, el) {
     this.card = card;
     this.el = el;
     const a = card.adapter;
-    // One box: pasted-image previews on top, then [model][effort] input [send].
+    // One box: pasted-image previews on top, then [model][effort] input [save] [send].
     el.innerHTML = `<div class="cbox"><div class="thumbs"></div>
       <select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
       <textarea rows="1" spellcheck="false"></textarea>
+      <button class="c-snip" title="현재 입력을 / 프롬프트로 저장" hidden>★</button>
       <button class="send" title="보내기 (Enter)" aria-label="보내기" disabled>${icon(ICONS.ArrowUp)}</button><ul class="slash" hidden></ul></div>
-      <span class="route" hidden></span><button class="queue" hidden></button><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>${icon(ICONS.Square)}<span class="lbl">중지</span></button>`;
+      <span class="route" hidden></span><button class="queue" hidden></button><div class="q-pop" hidden></div><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>${icon(ICONS.Square)}<span class="lbl">중지</span></button>`;
     this.queueBtn = el.querySelector(".queue");
-    this.queueBtn.onclick = () => card.clearQueue();
+    this.queuePop = el.querySelector(".q-pop");
+    this.queueBtn.onclick = () => {
+      if (!this.card.queue.length) return;
+      this.queuePop.hidden = !this.queuePop.hidden;
+    };
     this.renderQueue(); // rebuilt on agent switch: keep showing what is queued
     this.stopBtn = el.querySelector(".stop");
     this.stopBtn.onclick = () => card.interrupt();
+    this.snipBtn = el.querySelector(".c-snip");
+    this.snipBtn.onclick = () => this.saveCustomSnippet();
     this.sendBtn = el.querySelector(".send");
     this.sendBtn.onclick = () => this.send();
     this.ta = el.querySelector("textarea");
@@ -129,6 +140,7 @@ export class Composer {
     this.ta.style.overflowY = this.ta.scrollHeight > 140 ? "auto" : "hidden";
     const v = this.ta.value;
     this.sendBtn.disabled = !v.trim();
+    this.snipBtn.hidden = v.trim().length <= 4 || v.trim().startsWith("/");
     // A preview lives as long as its path is still in the box (deleted or sent → gone).
     for (const t of [...this.thumbs.children]) {
       if (!v.includes(t.dataset.path)) {
@@ -151,10 +163,25 @@ export class Composer {
     if (/^\/\S*$/.test(v)) {
       const cmds = (this.card.adapter?.commands ?? []).map((c) => ({ label: c, hint: "명령", value: c + " " }));
       const seen = new Set(cmds.map((c) => c.label));
+      const userSnips = loadSnippets().map((s) => ({ label: s.cmd, hint: "내 프롬프트", value: s.prompt, custom: true }));
+      for (const s of userSnips) seen.add(s.label);
       const snips = DEFAULT_SNIPPETS.filter((s) => !seen.has(s.cmd)).map((s) => ({ label: s.cmd, hint: s.hint, value: s.prompt }));
-      const all = [...cmds, ...snips].filter((x) => x.label.startsWith(v));
+      const all = [...userSnips, ...cmds, ...snips].filter((x) => x.label.startsWith(v));
       this.showSlash(all, "slash");
     } else this.slash.hidden = true;
+  }
+
+  saveCustomSnippet() {
+    const prompt = this.ta.value.trim();
+    if (!prompt) return;
+    const raw = window.prompt("저장할 /명령 이름을 입력하세요 (예: review):");
+    if (!raw?.trim()) return;
+    const cmd = "/" + raw.trim().replace(/^\/+/, "").replace(/\s+/g, "-");
+    const list = loadSnippets().filter((s) => s.cmd !== cmd);
+    list.unshift({ cmd, prompt });
+    saveSnippets(list);
+    this.snipBtn.textContent = "✓";
+    setTimeout(() => { if (this.snipBtn.isConnected) this.snipBtn.textContent = "★"; }, 1200);
   }
 
   showSlash(items, mode = "slash") {
@@ -171,6 +198,20 @@ export class Composer {
         hint.className = "slash-hint";
         hint.textContent = item.hint;
         li.append(hint);
+      }
+      if (item.custom) {
+        const del = document.createElement("button");
+        del.className = "slash-del";
+        del.type = "button";
+        del.textContent = "×";
+        del.title = "저장된 프롬프트 삭제";
+        del.onmousedown = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          saveSnippets(loadSnippets().filter((s) => s.cmd !== item.label));
+          this.update();
+        };
+        li.append(del);
       }
       if (i === 0) li.className = "on";
       li.onmousedown = (e) => {
@@ -326,7 +367,31 @@ export class Composer {
     const q = this.card.queue;
     this.queueBtn.hidden = !q.length;
     this.queueBtn.textContent = `다음 ${q.length}`;
-    this.queueBtn.title = `작업이 끝나면 차례로 보냅니다:\n${q.map((x, i) => `${i + 1}. ${x.text.slice(0, 80)}`).join("\n")}\n\n클릭: 모두 취소`;
+    this.queueBtn.title = `작업이 끝나면 차례로 보냅니다 · 클릭하면 목록 보기/개별 취소`;
+    this.queuePop.textContent = "";
+    if (!q.length) { this.queuePop.hidden = true; return; }
+    q.forEach((x, i) => {
+      const row = document.createElement("div");
+      row.className = "q-item";
+      const txt = document.createElement("span");
+      txt.textContent = `${i + 1}. ${x.text}`;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.textContent = "×";
+      del.title = "이 항목 취소";
+      del.onclick = () => {
+        q.splice(i, 1);
+        this.renderQueue();
+      };
+      row.append(txt, del);
+      this.queuePop.append(row);
+    });
+    const clr = document.createElement("button");
+    clr.type = "button";
+    clr.className = "q-clear";
+    clr.textContent = "모두 취소";
+    clr.onclick = () => this.card.clearQueue();
+    this.queuePop.append(clr);
   }
 
   dispatch(route, text) {
