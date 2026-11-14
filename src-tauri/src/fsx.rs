@@ -164,7 +164,10 @@ pub fn parse_hunks(diff: &str) -> Vec<u32> {
 /// Like `git()`, but keeps git's own message for the user when it fails.
 fn run_git(root: &str, args: &[&str]) -> Result<String, String> {
     let mut c = Command::new("git");
-    c.args(args).current_dir(root);
+    c.args(args)
+        .current_dir(root)
+        .stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -346,10 +349,18 @@ pub fn git_save(root: String, message: String, files: Option<Vec<String>>) -> Re
 
 /// "푸시": push; a branch without upstream gets one on origin.
 #[tauri::command]
-pub fn git_push(root: String) -> Result<String, String> {
-    run_git(&root, &["push"]).or_else(|e| {
-        if e.contains("upstream") { run_git(&root, &["push", "-u", "origin", "HEAD"]) } else { Err(e) }
+pub async fn git_push(root: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_git(&root, &["push"]).or_else(|e| {
+            if e.contains("upstream") || e.contains("업스트림") || e.contains("set-upstream") {
+                run_git(&root, &["push", "-u", "origin", "HEAD"])
+            } else {
+                Err(e)
+            }
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Commits on HEAD that no remote has yet (0 when there is no remote), to light up "푸시".
@@ -772,7 +783,7 @@ mod tests {
         git_save(root.clone(), "first".into(), None).unwrap();
         std::fs::write(dir.join("a.txt"), "v2").unwrap();
         assert!(git_diff(root.clone()).contains("+v2"));
-        git_push(root.clone()).unwrap();
+        tauri::async_runtime::block_on(git_push(root.clone())).unwrap();
         assert!(g(&["log", "-1", "--format=%s", "@{u}"]).contains("first"));
         let _ = std::fs::remove_dir_all(&base);
     }

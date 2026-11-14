@@ -41,7 +41,8 @@ export class Explorer {
       if (v && v !== this.curBranch) this.git("git_switch_branch", { name: v }, `브랜치 전환: ${v}`);
     };
     el.querySelector(".x-pr").onclick = () => this.createPr();
-    el.querySelector(".x-push").onclick = () => this.git("git_push", {}, "푸시했습니다");
+    this.pushBtn = el.querySelector(".x-push");
+    this.pushBtn.onclick = () => this.git("git_push", {}, "푸시했습니다");
     el.querySelector(".xbar").addEventListener("click", (e) => {
       const m = e.target.dataset?.m;
       if (m) this.setMode(m);
@@ -200,11 +201,20 @@ export class Explorer {
 
   /** Commit / push, with plain-language results instead of git output. */
   async git(cmd, args, done) {
+    const isPush = cmd === "git_push";
+    if (isPush && this.pushBtn) {
+      this.pushBtn.disabled = true;
+      this.say("푸시 중…");
+    }
     try {
       await invoke(cmd, { root: this.card.root, ...args });
       this.say(done);
     } catch (e) {
-      this.say(`실패: ${String(e).split("\n")[0]}`, true);
+      const lines = String(e).split("\n").map((l) => l.trim()).filter(Boolean);
+      const errLine = lines.find((l) => /^(error:|fatal:|!|remote:|rejected)/i.test(l)) || lines.slice(0, 2).join(" · ");
+      this.say(`실패: ${errLine || e}`, true);
+    } finally {
+      if (isPush && this.pushBtn) this.pushBtn.disabled = false;
     }
     this.refresh();
     this.card.onFsChange();
