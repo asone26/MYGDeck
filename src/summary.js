@@ -148,6 +148,13 @@ function renderCurrent(card, box, st) {
         rb.title = "이 턴 직전 체크포인트로 되돌리기";
         row.append(rb);
       }
+      if ((card.explorer?.status?.size ?? 0) > 0) {
+        row.append(
+          button("테스트 실행", () => card.quickRun()),
+          button("변경 리뷰 요청", () => card.sendToAgent("방금 변경한 코드에서 엣지케이스나 버그가 없는지 점검해줘.")),
+          button("지금 커밋", () => card.explorer.commit()),
+        );
+      }
       const copyBtn = button("답변 복사", async () => {
         await navigator.clipboard.writeText(card.turn.texts.join("\n\n")).catch(() => {});
         copyBtn.textContent = "복사됨 ✓";
@@ -235,11 +242,13 @@ function answer(texts, card = null) {
       const raw = code.textContent.trim();
       if (!FILE_REF_RE.test(raw) || raw.startsWith("http")) continue;
       const rel = raw.replace(/(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)$/, "");
+      const m = raw.match(/(?::(\d+)|#L(\d+))/);
+      const line = m ? Number(m[1] || m[2]) : null;
       code.classList.add("s-file");
       code.title = "클릭하면 코드 뷰어로 열기";
       code.onclick = (e) => {
         e.stopPropagation();
-        card.viewer.open(rel, "code");
+        card.viewer.open(rel, "code", line);
       };
     }
   }

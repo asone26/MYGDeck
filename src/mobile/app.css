@@ -325,3 +325,17 @@ body.stale .pulse { animation: none !important; }
 .dir-start:disabled { opacity: 0.4; }
 .add-foot .primary { min-height: 48px; border-radius: 10px; font-size: 16px; font-weight: 700; }
 body.stale .summary, body.stale .d-status { opacity: 0.55; }
+
+
+.m-diff { padding: 12px 14px; font-size: 13px; }
+.mdiff-stat { margin-bottom: 8px; font-weight: 600; }
+.mdiff-stat .a { color: #7ec699; }
+.mdiff-stat .d { color: #e06c75; }
+.mdiff-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.mdiff-files button { font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(128,128,128,.3); background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mdiff-files button.on { border-color: #7aa6da; background: rgba(122,166,218,.18); font-weight: 600; }
+.mdiff-code { font-family: ui-monospace, monospace; font-size: 11.5px; line-height: 1.45; overflow-x: auto; border-radius: 8px; padding: 8px; background: rgba(0,0,0,.22); }
+.mdiff-code div { white-space: pre; }
+.mdiff-add { background: rgba(126,198,153,.16); color: #9fd9b4; }
+.mdiff-del { background: rgba(224,108,117,.16); color: #f0959c; }
+.mdiff-hunk { color: #7aa6da; margin-top: 4px; }

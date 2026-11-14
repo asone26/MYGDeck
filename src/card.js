@@ -8,13 +8,14 @@ import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
-import { MENU, keyLabel, ROTATE_AT, contextLimit, detectLocalhostUrl, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, projectColor, promptWaiting, seedPrompt } from "./logic.js";
+import { MENU, keyLabel, ROTATE_AT, contextLimit, detectLocalhostUrl, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, pickErrorLines, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { elapsed, renderSummary, summaryLines } from "./summary.js";
 
 const TEMPLATE = `
 <div class="head">
   <span class="dot"></span><span class="idx"></span><b class="name"></b><select class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기"></select>
-  <span class="badge"></span><span class="stext"></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
+  <span class="badge"></span><span class="stext"></span><span class="b-conflict" hidden></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
+  <button class="b-perm" title="권한 승인 모드 전환 (확인 / 자동허용)"></button>
   <button class="b-mute" title="알림 끄기/켜기"></button>
   <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
   <button class="b-cli" title="CLI 화면 보기" hidden></button>
@@ -26,7 +27,7 @@ const TEMPLATE = `
   <details class="m-note"><summary>메모</summary><textarea class="note-ta" rows="4" placeholder="이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…"></textarea></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
-<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button></div>
+<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>
@@ -76,6 +77,11 @@ export class Card {
       this.app.save();
     };
     this.syncMute();
+    this.permBtn = this.$(".b-perm");
+    this.autoApprove = !!cfg.auto_approve;
+    this.permBtn.onclick = () => this.toggleAutoApprove();
+    this.syncPerm();
+    this.$(".shell-fix").onclick = () => this.fixShellError();
     this.$(".shell-send").onclick = () => this.sendShellOutput();
     const grip = this.$(".shell-grip");
     grip.onpointerdown = (e) => {
@@ -256,6 +262,51 @@ export class Card {
     this.updateView();
     this.app.renderStrip();
     if (prev !== status) this.app.onStatus?.(this, prev);
+    if (this.autoApprove && status === "waiting") this.maybeAutoApprove(text);
+  }
+
+  syncPerm() {
+    if (!this.permBtn) return;
+    this.permBtn.classList.toggle("auto", this.autoApprove);
+    this.permBtn.textContent = this.autoApprove ? "자동허용" : "확인";
+    this.permBtn.title = this.autoApprove
+      ? "권한 요청을 자동으로 허용합니다 · 클릭하면 수동 확인으로 전환"
+      : "권한 요청마다 확인합니다 · 클릭하면 자동허용으로 전환";
+  }
+
+  toggleAutoApprove() {
+    this.cfg.auto_approve = !this.cfg.auto_approve || undefined;
+    this.autoApprove = !!this.cfg.auto_approve;
+    this.syncPerm();
+    this.app.save();
+  }
+
+  maybeAutoApprove(text) {
+    const isPerm = /사용 허용|permission|approve|허용|승인/i.test(text || "")
+      || (this.menuOpen && (this.menuChoices ?? []).some((c) => /yes|allow|허용|don't ask/i.test(c.label)));
+    if (!isPerm) return;
+    const now = Date.now();
+    if (this.lastAutoAt && now - this.lastAutoAt < 1500) return;
+    this.lastAutoAt = now;
+    setTimeout(() => {
+      if (this.autoApprove && this.status === "waiting") this.answerPermission(true);
+    }, 250);
+  }
+
+  setConflicts(list) {
+    this.conflicts = new Map((list ?? []).map((c) => [c.file, c.others]));
+    const b = this.$(".b-conflict");
+    if (b) {
+      b.hidden = !this.conflicts.size;
+      if (this.conflicts.size) {
+        b.textContent = `충돌 주의 ${this.conflicts.size}`;
+        b.title = [...this.conflicts.entries()]
+          .slice(0, 6)
+          .map(([f, others]) => `${f} (${others.join(", ")})`)
+          .join("\n");
+      }
+    }
+    this.explorer?.render?.();
   }
 
   /** In GUI mode the GUI view covers the CLI; only agents without hooks show the raw CLI. */
@@ -332,6 +383,7 @@ export class Card {
   setFileCount(n) {
     this.$(".cnt").textContent = n ? `· ${n}개 변경` : "";
     this.refreshDiff(n);
+    this.app.updateConflicts?.();
   }
 
   /** Header badge "+12 −3": lines changed since the last commit (B5), plus current branch / PR link. */
@@ -779,14 +831,29 @@ export class Card {
     spec.open = !spec.open;
   }
 
-  async loadSpec() {
-    const s = await invoke("read_spec", { root: this.root, preferred: this.cfg.spec_file ?? null }).catch(() => null);
+  async loadSpec(fileOverride = null) {
+    const s = await invoke("read_spec", { root: this.root, preferred: fileOverride ?? this.cfg.spec_file ?? null }).catch(() => null);
     this.$(".spec-name").textContent = s ? s.name : "(없음)";
     // Spec files may be written by agents: sanitize before rendering.
     const box = this.$(".spec");
     box.innerHTML = s
       ? DOMPurify.sanitize(marked.parse(s.content))
       : `<p class="muted">MASTER_SPEC.md · CLAUDE.md · README.md 가 없습니다.</p>`;
+    const files = await this.fileList();
+    const guides = ["MASTER_SPEC.md", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "README.md"].filter((f) => files.includes(f));
+    if (guides.length > 1) {
+      const bar = document.createElement("div");
+      bar.className = "spec-tabs";
+      for (const g of guides) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = g;
+        if (s?.name === g) b.className = "on";
+        b.onclick = () => this.loadSpec(g);
+        bar.append(b);
+      }
+      box.prepend(bar);
+    }
     // Allow clicking unchecked spec checklist items to queue/insert them as the next prompt.
     for (const cb of box.querySelectorAll('input[type="checkbox"]')) {
       cb.disabled = true;
@@ -899,6 +966,12 @@ export class Card {
     const out = this.shell?.lastLines(30, false).join("\n").trim();
     if (!out) return message("하단 터미널에 보낼 출력이 없습니다.", { kind: "info" });
     this.composer.insert(`터미널 실행 결과입니다. 오류가 있으면 원인을 파악해 고쳐주세요:\n\`\`\`\n${out}\n\`\`\`\n`);
+  }
+
+  fixShellError() {
+    const out = pickErrorLines(this.shell?.lastLines(50, false) ?? [], 30);
+    if (!out) return message("하단 터미널에 보낼 출력이 없습니다.", { kind: "info" });
+    this.composer.insert(`하단 터미널에서 오류가 발생했습니다. 원인을 파악해 수정해 주세요:\n\`\`\`\n${out}\n\`\`\`\n`);
   }
 
   focusDefault() {

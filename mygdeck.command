@@ -11,11 +11,23 @@ APP="$ROOT/src-tauri/target/debug/bundle/macos/mygdeck.app"
 
 [ "${1:-}" = "rebuild" ] && shift  # 예전 사용법. 지금은 그냥 실행과 같다
 
+stop_daemon=0
 # 앱은 다른 폴더에서 열리므로 프로젝트 경로를 절대 경로로 바꿔 넘긴다.
 args=()
 for a in "$@"; do
-  if [ -d "$a" ]; then args+=("$(cd "$a" && pwd)"); else args+=("$a"); fi
+  if [ "$a" = "--daemon" ]; then
+    stop_daemon=1
+  elif [ -d "$a" ]; then
+    args+=("$(cd "$a" && pwd)")
+  else
+    args+=("$a")
+  fi
 done
+
+if [ "$stop_daemon" -eq 1 ] && [ -x "$ROOT/src-tauri/target/debug/mygdeck-cli" ]; then
+  echo "실행 중인 세션 데몬을 종료합니다..."
+  "$ROOT/src-tauri/target/debug/mygdeck-cli" daemon stop || true
+fi
 
 fail() {
   echo

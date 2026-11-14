@@ -76,8 +76,8 @@ pub fn list_files(root: String) -> Vec<String> {
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct FileStatus {
-    path: String,
-    code: char,
+    pub path: String,
+    pub code: char,
 }
 
 #[tauri::command]

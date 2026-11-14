@@ -268,3 +268,29 @@ test("mentionToken extracts @query at cursor only after start or whitespace", as
   assert.equal(mentionToken("user@example.com", 16), null);
   assert.equal(mentionToken("done @file ", 11), null);
 });
+
+test("findFileConflicts groups worktrees and flags overlapping modified files", async () => {
+  const { findFileConflicts, repoFamily } = await import("./logic.js");
+  assert.equal(repoFamily("C:\\work\\app-wt2\\"), "c:/work/app");
+  const conflicts = findFileConflicts([
+    { id: "c1", name: "app", root: "C:/work/app", files: ["src/a.js", "src/b.js"] },
+    { id: "c2", name: "app-wt1", root: "C:/work/app-wt1", files: ["src/b.js", "src/c.js"] },
+    { id: "c3", name: "other", root: "C:/work/other", files: ["src/b.js"] },
+  ]);
+  assert.deepEqual(conflicts, {
+    c1: [{ file: "src/b.js", others: ["app-wt1"] }],
+    c2: [{ file: "src/b.js", others: ["app"] }],
+  });
+});
+
+test("formatReviewComments and pickErrorLines format agent prompts cleanly", async () => {
+  const { formatReviewComments, pickErrorLines } = await import("./logic.js");
+  const msg = formatReviewComments([
+    { rel: "src/a.js", line: 12, comment: "null 체크" },
+    { rel: "README.md", line: null, comment: "오타 수정" },
+  ]);
+  assert.ok(msg.includes("`src/a.js L12`: null 체크"));
+  assert.ok(msg.includes("`README.md`: 오타 수정"));
+  const out = pickErrorLines(["ok 1", "ok 2", "TypeError: boom", "at line 5"]);
+  assert.ok(out.includes("TypeError: boom"));
+});

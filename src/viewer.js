@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { keyLabel, lineRange, mentionFor, parseDiff, addedRows } from "./logic.js";
+import { keyLabel, lineRange, mentionFor, parseDiff, addedRows, formatReviewComments } from "./logic.js";
 
 // Syntax highlighting is the largest dependency; load it only when a file is first opened.
 let hljsLoad = null;
@@ -13,7 +13,7 @@ const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, 
  *  A changed file also has a review view: its diff against the last commit, with 되돌리기. */
 export class Viewer {
   constructor(card, el) {
-    Object.assign(this, { card, el });
+    Object.assign(this, { card, el, comments: [] });
     el.tabIndex = -1;
     el.innerHTML = `
       <div class="vbar"><span class="vpath"></span>
@@ -25,6 +25,7 @@ export class Viewer {
           <button class="v-split" title="나란히(2열) 비교 보기">나란히</button>
           <button class="v-revert"></button>
         </span>
+        <button class="v-rev-send" title="작성한 리뷰 코멘트를 입력창에 넣기" hidden></button>
         <button class="v-ins" title="${keyLabel("선택한 코드를 입력창에 넣기 (Ctrl+I)")}">@<span class="vl"> 입력창에 넣기</span></button>
         <button class="v-close" title="닫기 (Esc)">×</button></div>
       <div class="vbody"><pre class="gutter"></pre><pre class="code"><code class="hljs"></code></pre><div class="vdiff" hidden></div></div>`;
@@ -46,6 +47,8 @@ export class Viewer {
       this.diff.classList.toggle("split", this.splitMode);
     };
     this.revertBtn.onclick = () => this.revert();
+    this.revSendBtn = el.querySelector(".v-rev-send");
+    this.revSendBtn.onclick = () => this.sendReviewComments();
     el.querySelector(".v-close").onclick = () => this.close();
     // mousedown keeps the code selection alive until the click handler reads it.
     el.querySelector(".v-ins").onmousedown = (e) => e.preventDefault();
@@ -136,9 +139,10 @@ export class Viewer {
   }
 
   /** mode "diff" opens the review view when the file has changes; a deleted file only has that view. */
-  async open(rel, mode = "code") {
+  async open(rel, mode = "code", line = null) {
     this.allDiffs = false;
     this.rel = rel;
+    this.targetLine = line ? Number(line) : null;
     const code = this.card.explorer.status.get(rel);
     this.mode = code && (mode === "diff" || code === "D") ? "diff" : "code";
     this.el.hidden = false;
@@ -193,6 +197,11 @@ export class Viewer {
       this.gutter.textContent = "";
     }
     this.body.scrollTop = keepScroll ? top : 0;
+    if (!keepScroll && this.targetLine) {
+      const lh = parseFloat(getComputedStyle(this.code).lineHeight) || 19;
+      this.body.scrollTop = Math.max(0, (this.targetLine - 4) * lh);
+      this.targetLine = null;
+    }
   }
 
   async loadDiff() {
@@ -260,6 +269,7 @@ export class Viewer {
       b.onclick = () => this.open(b.dataset.rel, "diff");
     }
     this.wireHunkDiscard();
+    this.wireReviewComments();
   }
 
   diffRowsHtml(rows, hljs, rel, untracked, limit = DIFF_ROWS) {
@@ -275,10 +285,79 @@ export class Viewer {
       }
       if (r.kind === "meta") return `<div class="dl meta"><span class="dt">${esc(r.text)}</span></div>`;
       const mark = r.kind === "add" ? "+" : r.kind === "del" ? "−" : "";
-      return `<div class="dl ${r.kind}"><span class="ln">${r.old ?? ""}</span><span class="ln n">${r.new ?? ""}</span><span class="dm">${mark}</span><span class="dt">${color(r.text)}</span></div>`;
+      const lineNum = r.new ?? r.old ?? "";
+      const saved = this.comments
+        .map((c, idx) => ({ c, idx }))
+        .filter(({ c }) => c.rel === rel && String(c.line ?? "") === String(lineNum))
+        .map(({ c, idx }) => `<div class="dl-comment"><span>${esc(c.comment)}</span><button class="dl-cdel" data-idx="${idx}" title="코멘트 삭제">×</button></div>`)
+        .join("");
+      const addBtn = `<button class="dl-add-c" data-rel="${esc(rel)}" data-line="${esc(String(lineNum))}" title="이 줄에 리뷰 코멘트 달기">+</button>`;
+      return `<div class="dl ${r.kind}"><span class="ln">${r.old ?? ""}</span><span class="ln n">${r.new ?? ""}${addBtn}</span><span class="dm">${mark}</span><span class="dt">${color(r.text)}</span></div>${saved}`;
     });
     if (rows.length > limit) html.push(`<div class="dl meta"><span class="dt">변경이 많아 앞쪽 ${limit}줄만 보여 줍니다 · 파일을 열어 전체를 보세요</span></div>`);
     return html.join("");
+  }
+
+  syncReviewSend() {
+    if (!this.revSendBtn) return;
+    const n = this.comments.length;
+    this.revSendBtn.hidden = !n;
+    if (n) this.revSendBtn.textContent = `리뷰 ${n}건 보내기`;
+  }
+
+  sendReviewComments() {
+    if (!this.comments.length) return;
+    const prompt = formatReviewComments(this.comments);
+    this.comments = [];
+    this.syncReviewSend();
+    this.card.composer.insert(prompt);
+    if (this.mode === "diff") {
+      if (this.allDiffs) this.loadAllDiffs();
+      else this.loadDiff();
+    }
+  }
+
+  wireReviewComments() {
+    this.syncReviewSend();
+    for (const del of this.diff.querySelectorAll(".dl-cdel")) {
+      del.onclick = () => {
+        this.comments.splice(Number(del.dataset.idx), 1);
+        this.syncReviewSend();
+        if (this.allDiffs) this.loadAllDiffs();
+        else this.loadDiff();
+      };
+    }
+    for (const btn of this.diff.querySelectorAll(".dl-add-c")) {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const row = btn.closest(".dl");
+        if (!row) return;
+        const next = row.nextElementSibling;
+        if (next?.classList.contains("dl-cbox")) {
+          next.querySelector("input")?.focus();
+          return;
+        }
+        const box = document.createElement("div");
+        box.className = "dl-cbox";
+        box.innerHTML = `<input type="text" placeholder="${esc(btn.dataset.rel)}${btn.dataset.line ? ` L${esc(btn.dataset.line)}` : ""} 리뷰 코멘트… (Enter 저장 · Esc 취소)" spellcheck="false"><button type="button" class="dl-csave">추가</button>`;
+        const input = box.querySelector("input");
+        const save = () => {
+          const text = input.value.trim();
+          if (!text) return box.remove();
+          this.comments.push({ rel: btn.dataset.rel, line: btn.dataset.line ? Number(btn.dataset.line) : null, comment: text });
+          this.syncReviewSend();
+          if (this.allDiffs) this.loadAllDiffs();
+          else this.loadDiff();
+        };
+        box.querySelector(".dl-csave").onclick = save;
+        input.onkeydown = (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); save(); }
+          else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); box.remove(); }
+        };
+        row.after(box);
+        input.focus();
+      };
+    }
   }
 
   wireHunkDiscard() {
@@ -317,6 +396,7 @@ export class Viewer {
     this.diff.style.setProperty("--lnw", `${Math.max(width, 2)}ch`);
     this.diff.innerHTML = this.diffRowsHtml(rows, hljs, this.rel, this.untrackedDiff);
     this.wireHunkDiscard();
+    this.wireReviewComments();
   }
 
   render(text, changed, hljs) {
@@ -329,7 +409,10 @@ export class Viewer {
     const marked = new Set(changed.lines);
     const n = text.split("\n").length;
     const nums = [];
-    for (let i = 1; i <= n; i++) nums.push(changed.all || marked.has(i) ? `<span class="chg">${i}</span>` : i);
+    for (let i = 1; i <= n; i++) {
+      const cls = [changed.all || marked.has(i) ? "chg" : "", this.targetLine === i ? "jump" : ""].filter(Boolean).join(" ");
+      nums.push(cls ? `<span class="${cls}">${i}</span>` : i);
+    }
     this.gutter.innerHTML = nums.join("\n");
   }
 

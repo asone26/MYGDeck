@@ -539,13 +539,61 @@ class Detail {
     this.tab = tab;
     $("tab-turn").setAttribute("aria-selected", String(tab === "turn"));
     $("tab-cli").setAttribute("aria-selected", String(tab === "cli"));
+    $("tab-diff").setAttribute("aria-selected", String(tab === "diff"));
     $("turn").hidden = tab !== "turn";
     $("cli").hidden = tab !== "cli";
+    $("m-diff").hidden = tab !== "diff";
     $("cli-tools").hidden = tab !== "cli";
     if (tab === "cli") {
       this.renderCli();
       $("d-body").scrollTop = $("d-body").scrollHeight;
+    } else if (tab === "diff") {
+      this.loadDiff();
     } else this.loadTurnSoon(0);
+  }
+
+  async loadDiff(file = "") {
+    const box = $("m-diff");
+    box.innerHTML = `<p class="muted">변경 내역 불러오는 중…</p>`;
+    try {
+      const q = file ? `&file=${encodeURIComponent(file)}` : "";
+      const d = await api(`/api/diff?id=${encodeURIComponent(this.id)}${q}`);
+      if (!d.files?.length) {
+        box.innerHTML = `<p class="muted">변경된 파일이 없습니다.</p>`;
+        return;
+      }
+      const stat = d.stat ? `<div class="mdiff-stat"><span class="a">+${d.stat.added}</span> <span class="d">−${d.stat.removed}</span> · ${d.files.length}개 파일</div>` : "";
+      const chips = document.createElement("div");
+      chips.className = "mdiff-files";
+      for (const f of d.files) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = f.path === d.file ? "on" : "";
+        b.textContent = `${f.code} ${f.path}`;
+        b.onclick = () => this.loadDiff(f.path);
+        chips.append(b);
+      }
+      const pre = document.createElement("div");
+      pre.className = "mdiff-code";
+      const raw = d.diff?.untracked ? "(새 파일 — PC에서 전체 내용을 확인하세요)" : (d.diff?.diff || "표시할 diff가 없습니다.");
+      const lines = raw.split("\n").slice(0, 400);
+      for (const line of lines) {
+        const div = document.createElement("div");
+        div.className = line.startsWith("+") && !line.startsWith("+++")
+          ? "mdiff-add"
+          : line.startsWith("-") && !line.startsWith("---")
+            ? "mdiff-del"
+            : line.startsWith("@@")
+              ? "mdiff-hunk"
+              : "";
+        div.textContent = line;
+        pre.append(div);
+      }
+      box.innerHTML = stat;
+      box.append(chips, pre);
+    } catch (e) {
+      box.innerHTML = `<p class="muted">${errText(e)}</p>`;
+    }
   }
 
   /** Sent from this phone: show it at once as the newest instruction, until the transcript has it. */
@@ -839,6 +887,7 @@ function disarm() {
 
 $("tab-turn").addEventListener("click", () => detail?.setTab("turn"));
 $("tab-cli").addEventListener("click", () => detail?.setTab("cli"));
+$("tab-diff").addEventListener("click", () => detail?.setTab("diff"));
 const goList = () => {
   if (history.length > 1 && location.hash) history.back();
   else location.hash = "";

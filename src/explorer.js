@@ -10,6 +10,7 @@ export class Explorer {
     el.innerHTML = `<div class="xbar"><button data-m="changed" class="on">변경된 파일</button><button data-m="all">전체</button>
       <button class="x-turn" title="이번 턴에서 바뀐 파일만 보기" hidden>이번 턴</button>
       <button class="x-all" title="변경된 모든 파일을 한 화면에서 비교" hidden>전체 비교</button>
+      <button class="x-ai" title="AI로 변경사항 3줄 요약 및 주의할 점 점검" hidden>AI 요약</button>
       <span class="sp"></span>
       <select class="x-branches" title="브랜치 전환 또는 새 브랜치 만들기" hidden></select>
       <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기">PR</button>
@@ -20,9 +21,11 @@ export class Explorer {
     this.msg = el.querySelector(".xmsg");
     this.saveBtn = el.querySelector(".x-save");
     this.allBtn = el.querySelector(".x-all");
+    this.aiBtn = el.querySelector(".x-ai");
     this.turnBtn = el.querySelector(".x-turn");
     this.saveBtn.onclick = () => this.commit();
     this.allBtn.onclick = () => this.card.viewer.openAllDiffs();
+    this.aiBtn.onclick = () => this.summarizeChanges();
     this.turnBtn.onclick = () => {
       this.turnOnly = !this.turnOnly;
       this.turnBtn.classList.toggle("on", this.turnOnly);
@@ -121,6 +124,7 @@ export class Explorer {
     if (this.turnBtn.hidden) this.turnOnly = false;
     this.turnBtn.classList.toggle("on", this.turnOnly);
     this.allBtn.hidden = this.mode !== "changed" || total < 2;
+    this.aiBtn.hidden = this.mode !== "changed" || total === 0;
     this.saveBtn.classList.toggle("on", selected > 0);
     this.saveBtn.disabled = total > 0 && selected === 0;
     this.saveBtn.textContent = total > 0 && selected < total ? `커밋 (${selected}/${total})` : "커밋";
@@ -142,6 +146,22 @@ export class Explorer {
       if (line) message = line.slice(0, 100);
     }
     this.git("git_save", { message, files: files.length < allFiles.length ? files : null }, `커밋했습니다: ${message}`);
+  }
+
+  async summarizeChanges() {
+    if (!this.status.size) return this.say("바뀐 내용이 없습니다");
+    if (!poolReady()) return this.say("AI 연결 설정 후 사용할 수 있습니다", true);
+    this.say("변경사항 AI 요약 중…");
+    const diff = (await invoke("git_diff", { root: this.card.root }).catch(() => "")).slice(0, 8000);
+    const files = [...this.status].map(([p, c]) => `${c} ${p}`).join("\n");
+    const prompt = `Summarize these uncommitted git changes in Korean (3 concise bullets for what changed, plus 1-2 potential risks or missing checks if any).\n\nFiles:\n${files}\n\nDiff:\n${diff}`;
+    try {
+      const a = await invoke("ai_ask", { prompt, search: false });
+      this.card.showAnswer("변경사항 AI 요약", a.text, a.via, a);
+      this.msg.hidden = true;
+    } catch (e) {
+      this.say(`요약 실패: ${String(e).split("\n")[0]}`, true);
+    }
   }
 
   async newBranch() {
@@ -253,6 +273,15 @@ export class Explorer {
         this.syncControls();
       };
       row.prepend(chk);
+      const others = this.card.conflicts?.get(p);
+      if (others?.length) {
+        row.classList.add("conflict");
+        const tag = document.createElement("span");
+        tag.className = "x-cfl";
+        tag.textContent = "중복";
+        tag.title = `${others.join(", ")} 카드에서도 수정 중`;
+        row.append(tag);
+      }
       this.list.append(row);
     }
   }

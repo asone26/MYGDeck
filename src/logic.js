@@ -462,3 +462,67 @@ export function mentionToken(value, cursor = value.length) {
   if (!m) return null;
   return { start: before.length - m[1].length, end: cursor, query: m[2] };
 }
+
+/** Normalize a project path and strip `-wtN` worktree suffix so sibling worktrees group together. */
+export function repoFamily(root) {
+  return String(root ?? "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .replace(/-wt\d+$/i, "")
+    .toLowerCase();
+}
+
+/**
+ * Find overlapping modified files across cards sharing the same repository family.
+ * Returns `{ [cardId]: [{ file, others: string[] }] }`.
+ */
+export function findFileConflicts(cards) {
+  const groups = new Map();
+  for (const c of cards) {
+    const fam = repoFamily(c.root);
+    if (!fam) continue;
+    if (!groups.has(fam)) groups.set(fam, []);
+    groups.get(fam).push(c);
+  }
+  const out = {};
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const byFile = new Map();
+    for (const c of group) {
+      for (const file of c.files ?? []) {
+        if (!byFile.has(file)) byFile.set(file, []);
+        byFile.get(file).push(c);
+      }
+    }
+    for (const [file, owners] of byFile) {
+      if (owners.length < 2) continue;
+      for (const c of owners) {
+        const others = owners.filter((o) => o.id !== c.id).map((o) => o.name);
+        if (!others.length) continue;
+        (out[c.id] ??= []).push({ file, others });
+      }
+    }
+  }
+  return out;
+}
+
+/** Format inline diff review comments into a single prompt for the agent. */
+export function formatReviewComments(comments) {
+  if (!comments?.length) return "";
+  const lines = comments.map((c) => `- \`${c.rel}${c.line ? ` L${c.line}` : ""}\`: ${c.comment}`);
+  return `다음 리뷰 코멘트를 반영해 주세요:\n${lines.join("\n")}\n`;
+}
+
+const SHELL_ERR_RE = /\b(error|failed|exception|traceback|panic|err!|fatal)\b|exit code [1-9]/i;
+
+/** Pick the error-relevant tail of shell output, falling back to the last 30 lines. */
+export function pickErrorLines(lines, maxLines = 30) {
+  const clean = (lines ?? []).map((l) => String(l).trimEnd()).filter(Boolean);
+  if (!clean.length) return "";
+  const idx = clean.findLastIndex((l) => SHELL_ERR_RE.test(l));
+  if (idx >= 0) {
+    const start = Math.max(0, idx - 10);
+    return clean.slice(start, Math.min(clean.length, start + maxLines)).join("\n");
+  }
+  return clean.slice(-maxLines).join("\n");
+}

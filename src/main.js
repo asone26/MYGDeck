@@ -12,7 +12,7 @@ import { openConnections, refreshPool } from "./connections.js";
 import { ptys, setTermFontSize, setTermTheme } from "./pty.js";
 import { exportMarkdown } from "./summary.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
-import { DENSITIES, autoLayout, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
+import { DENSITIES, autoLayout, findFileConflicts, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
 const deck = $("deck");
@@ -34,8 +34,16 @@ const app = {
   layout,
   onStatus,
   onTestFail,
+  updateConflicts,
   onPeek: () => overlayKind === "overview" && renderOverview(),
 };
+
+function updateConflicts() {
+  const map = findFileConflicts(
+    app.cards.map((c) => ({ id: c.id, name: c.name, root: c.root, files: [...(c.explorer?.status?.keys?.() ?? [])] })),
+  );
+  for (const c of app.cards) c.setConflicts(map[c.id] ?? []);
+}
 
 let overlayKind = null;
 let overviewSel = 0;
@@ -576,6 +584,28 @@ function rememberRecent(path) {
   localStorage.setItem("mygdeck-recent", JSON.stringify(next));
 }
 
+function loadPresets() {
+  try { return JSON.parse(localStorage.getItem("mygdeck.presets") || "{}"); } catch { return {}; }
+}
+
+function saveWorkspacePreset() {
+  if (!app.cards.length) return;
+  const name = window.prompt("저장할 워크스페이스 이름 (예: 회사, 사이드):");
+  if (!name?.trim()) return;
+  const all = loadPresets();
+  all[name.trim()] = app.cards.map((c) => ({ ...c.cfg }));
+  localStorage.setItem("mygdeck.presets", JSON.stringify(all));
+}
+
+async function switchWorkspacePreset(name) {
+  const list = loadPresets()[name];
+  if (!list?.length) return;
+  while (app.cards.length) await closeCard(app.cards[0]);
+  for (const cfg of list) addCard(cfg, false, false);
+  save();
+  setActive(0);
+}
+
 let fontSize = 14;
 function applyFontSize(px) {
   fontSize = Math.max(11, Math.min(20, Number(px) || 14));
@@ -605,11 +635,20 @@ function openPalette() {
       { label: `${c.name}: 수동 세션 핸드오프 (progress.md → 새 대화)`, hint: "컨텍스트", run: () => c.manualHandoff() },
       { label: `${c.name}: worktree로 하나 더 열기`, hint: "병렬", run: () => c.openWorktree() },
       { label: `${c.name}: 프로젝트 자동화 · 알림 설정`, hint: c.cfg.muted ? "음소거됨" : "훅/검증", run: () => openProjectSettings(c) },
+      { label: `${c.name}: 권한 승인 모드 전환 (${c.autoApprove ? "자동허용 → 확인" : "확인 → 자동허용"})`, hint: c.autoApprove ? "자동허용" : "확인", run: () => c.toggleAutoApprove() },
+      ...(c.viewer.comments.length ? [{ label: `${c.name}: 작성한 리뷰 코멘트 ${c.viewer.comments.length}건 입력창에 넣기`, hint: "리뷰", run: () => c.viewer.sendReviewComments() }] : []),
+      ...(c.shell ? [{ label: `${c.name}: 하단 터미널 오류 추출 → 에이전트에 요청`, hint: "오류 고치기", run: () => c.fixShellError() }] : []),
       { label: `${c.name}: 알림 ${c.cfg.muted ? "켜기" : "음소거"}`, hint: "알림", run: () => { c.cfg.muted = !c.cfg.muted; save(); } },
     ] : []),
     ...loadRecent()
       .filter((p) => !app.cards.some((card) => card.root.replace(/[\\/]+$/, "").toLowerCase() === p.replace(/[\\/]+$/, "").toLowerCase()))
       .map((p) => ({ label: `최근 닫은 프로젝트 열기: ${p.split(/[\\/]/).pop()}`, hint: p, run: () => openProject(p) })),
+    ...Object.entries(loadPresets()).map(([name, list]) => ({
+      label: `워크스페이스 전환: ${name}`,
+      hint: `${list.length}개 프로젝트`,
+      run: () => switchWorkspacePreset(name),
+    })),
+    { label: "워크스페이스: 현재 프로젝트 묶음 저장…", hint: `${app.cards.length}개`, run: saveWorkspacePreset },
     { label: "전체 보기", hint: keyLabel("Ctrl+0"), run: toggleOverview },
     { label: "글자 크기 크게 (+1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize + 1) },
     { label: "글자 크기 작게 (-1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize - 1) },
@@ -806,7 +845,7 @@ function openCodeSearch() {
   const open = () => {
     const h = hits[sel];
     closeOverlay();
-    if (h) c.viewer.open(h.path, "code");
+    if (h) c.viewer.open(h.path, "code", h.line);
   };
   const render = () => {
     list.textContent = "";

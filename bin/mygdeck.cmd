@@ -5,12 +5,13 @@ rem 어디서든 mygdeck 실행 (bin\install.cmd가 이 폴더를 PATH에 넣는
 rem   mygdeck                → 지난번 프로젝트 목록으로 열기
 rem   mygdeck . ..\other     → 지정한 폴더들로 열기 (상대 경로 가능)
 rem   mygdeck rebuild        → 다시 빌드하고 열기 (mygdeck.bat)
+rem   mygdeck rebuild --daemon → 데몬까지 종료한 뒤 다시 빌드하고 열기
 rem   mygdeck status|send|daemon|mobile|help ...  → mygdeck-cli
 set "ROOT=%~dp0.."
 
 for %%c in (status send daemon mobile help -h --help) do if /i "%~1"=="%%c" goto :cli
 if /i "%~1"=="rebuild" (
-  call "%ROOT%\mygdeck.bat" rebuild
+  call "%ROOT%\mygdeck.bat" %*
   exit /b %errorlevel%
 )
 
