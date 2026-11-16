@@ -67,8 +67,11 @@ export class Composer {
     const effort = el.querySelector(".effort");
     if (a?.effort_cmd && a.efforts?.length) {
       effort.append(new Option("Effort", ""), ...a.efforts.map((e) => new Option(e, e)));
-      effort.value = /--effort (\S+)/.exec(a.launch)?.[1] ?? "";
-      effort.onchange =() => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
+      const launchEffort = /--effort (\S+)/.exec(a.launch)?.[1];
+      effort.value = (launchEffort && a.efforts.includes(launchEffort))
+        ? launchEffort
+        : (a.efforts.includes("medium") ? "medium" : a.efforts[0]);
+      effort.onchange = () => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
     } else {
       effort.hidden = true;
     }
