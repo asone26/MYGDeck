@@ -265,6 +265,7 @@ impl Hub {
             let msg = ev.data["message"].as_str().unwrap_or("");
             match ev.event.as_str() {
                 "prompt" => (x.status, x.text) = ("working".into(), "작업 중".into()),
+                "invocation" if x.status != "working" => (x.status, x.text) = ("working".into(), "작업 중".into()),
                 "tool" => {
                     x.status = "working".into();
                     x.text = format!("{} {}", ev.data["tool"].as_str().unwrap_or(""), ev.data["detail"].as_str().unwrap_or("")).trim().into();

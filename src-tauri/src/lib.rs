@@ -63,6 +63,7 @@ pub fn run() {
             // Hooks run from the daemon's stable copy of this program, so a rebuild cannot break them.
             let hook_exe = daemon::stable_exe().to_string_lossy().replace('\\', "/");
             let claude_settings = hooks::write_claude_settings(app.handle(), &hook_exe)?;
+            let _ = hooks::write_agy_hooks(&hook_exe);
             app.manage(hooks::HookInfo { claude_settings, hook_exe });
             // How this window was started, so the phone dashboard can open the deck the same way.
             mobile::remember_app();

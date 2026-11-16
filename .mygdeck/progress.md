@@ -1,3 +1,31 @@
+# 진행 상황 (2026-11-16) — 에이전트를 antigravity로 교체하며 인계
+
+## 한 일
+- 2026-11-14 오후 작업은 커밋됨(caf0eb4 ~ 59e8aa8, 기능별로 나눈 커밋들).
+- 커밋 안 됨(작업 트리): 빈 화면 "우주" 장식
+  - `index.html` `#empty`에 `.empty-orbit`(궤도 3개, 행성 3개 + 주황 `beacon` = 승인 대기 상징).
+  - `src/style.css` `#aura::before`에 SVG 별 배경 + 푸른 하늘 그라데이션, 궤도 회전(`orbit-spin`)·`beacon-pulse` 애니메이션.
+- 커밋 안 됨: Antigravity CLI(`agy`) 상태 연동
+  - `antigravity.toml`: `status = "hooks"`, `context_limit = 1000000`.
+  - `hooks.rs` `write_agy_hooks`: `~/.gemini/config/hooks.json`에 `mygdeck` 그룹(SessionStart·PreInvocation·PostToolUse·Stop)만 추가, 사용자 훅은 보존. `--hook-json`(`send_json`)은 stdout에 JSON 응답(Stop은 `{"decision":"allow"}`). `trim_payload`가 agy 필드(`toolCall`, `lastUserInput`, `transcriptPath`)도 읽음.
+  - `turn.rs`: agy 대화 기록(`USER_INPUT`·`PLANNER_RESPONSE`) 파싱, `<USER_REQUEST>` 추출. `daemon.rs`·`logic.js`·`card.js`: `invocation` 이벤트 = 작업 시작(이미 작업 중이면 진행 상황만 갱신).
+- 커밋 안 됨: 셸 패널 `새로 열기` 버튼(`card.js` `openShell({fresh})`·`restartShell`).
+- 위 변경 모두 빌드·테스트 안 함(미빌드 상태라 실행 중인 구빌드에서는 `antigravity.toml`이 `status = "idle"`로 남아 GUI가 안 뜸).
+
+## 다음 할 일
+- [ ] `cargo test`·`npm test`·빌드 후 실제 앱에서 agy GUI 뷰·카드 상태(작업 중→대기)·대화 요약·컨텍스트 표시 확인. agy 밖에서 단독 실행 시 훅이 방해하지 않는지 확인
+- [ ] 빈 화면 우주 장식 확인 후 커밋: 밝은 테마에서 흰 별(`fill='white'`)·푸른 하늘이 어색한지, `prefers-reduced-motion`에서 궤도·beacon 정지되는지, 좁은 창에서 740px 궤도 넘침 없는지
+- [ ] 아직 못 본 것: 앱 화면에서 질문 칸 답변 표시, 실제 세션 회전 1회, 중지 후 지시 복원, CLI 추천 문구 감지(`isFaint`), 재부팅 실제 재시작, Codex·Gemini 어댑터(이 PC에 미설치)
+- [ ] 휴대폰 대시보드(`src/mobile`)에 밝은 테마
+- [ ] master.md 3.1·3.4 디자인 설명 갱신, 원격·로컬 브랜치 `design/aurora-glass` 삭제(사용자 허용 필요)
+
+## 결정 (유지)
+- 디자인: "빛과 유리(오로라)", 계속 움직이는 모션은 transform/opacity만, reduced-motion에서 정지, 카드에 `backdrop-filter` 금지.
+- 밝은 테마는 따뜻한 종이 색(순백·순검정 없음, 본문 대비 약 11:1).
+- 프로젝트 색 팔레트에 상태 색(주황·초록·빨강·금색) 없음 — 주황은 승인 대기 전용.
+- AI 질문: 연결 없으면 `claude -p --model haiku`(구독 CLI)로 대체.
+- agy 훅은 전역 `~/.gemini/config/hooks.json`에 넣되 `mygdeck` 키만 덮어씀. `MYGDECK_ID`가 없으면(덱 밖) 바로 `{}`만 돌려줌.
+
 # 진행 상황 (2026-11-14)
 
 ## 한 일 (오후, 개선 5건)

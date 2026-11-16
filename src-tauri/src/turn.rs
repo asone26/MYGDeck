@@ -66,13 +66,25 @@ fn content_text(v: &Value) -> String {
 }
 
 fn tool_detail(input: &Value) -> String {
-    ["file_path", "command", "pattern", "path", "url", "description"]
+    [
+        "file_path", "command", "pattern", "path", "url", "description",
+        "CommandLine", "Path", "TargetFile", "Pattern", "Query", "Url",
+    ]
         .iter()
         .find_map(|k| input.get(*k).and_then(Value::as_str))
         .unwrap_or("")
         .chars()
         .take(300)
         .collect()
+}
+
+fn agy_user_prompt(raw: &str) -> String {
+    if let Some((_, rest)) = raw.split_once("<USER_REQUEST>") {
+        if let Some((inner, _)) = rest.split_once("</USER_REQUEST>") {
+            return inner.trim().to_string();
+        }
+    }
+    raw.split("<ADDITIONAL_METADATA>").next().unwrap_or(raw).trim().to_string()
 }
 
 /// Text the harness injects as a user row (newer Claude Code marks the origin; older ones only the wrapper tag).
@@ -95,6 +107,42 @@ pub fn parse_turn(jsonl: &str) -> Turn {
         // Subagent traffic and meta notices are not part of what the user asked.
         if row.get("isSidechain").and_then(Value::as_bool) == Some(true) || row.get("isMeta").and_then(Value::as_bool) == Some(true) {
             continue;
+        }
+        match row.get("type").and_then(Value::as_str) {
+            Some("USER_INPUT") if row.get("source").and_then(Value::as_str) != Some("SYSTEM") => {
+                let prompt = agy_user_prompt(row.get("content").and_then(Value::as_str).unwrap_or(""));
+                if !prompt.is_empty() && !is_notice(&row, &prompt) {
+                    turn = Turn { prompt, context_tokens: turn.context_tokens, model: std::mem::take(&mut turn.model), ..Default::default() };
+                }
+                continue;
+            }
+            Some("PLANNER_RESPONSE") => {
+                if row.get("input_tokens").is_some() || row.get("cache_read_tokens").is_some() {
+                    let n = |k: &str| row.get(k).and_then(Value::as_u64).unwrap_or(0);
+                    turn.context_tokens = n("input_tokens") + n("cache_read_tokens");
+                }
+                if let Some(m) = row.get("model").and_then(Value::as_str).filter(|m| !m.is_empty()) {
+                    turn.model = m.into();
+                }
+                if let Some(t) = row.get("content").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                    turn.texts.push(t.into());
+                }
+                for tc in row.get("tool_calls").and_then(Value::as_array).into_iter().flatten() {
+                    let name = tc.get("name").and_then(Value::as_str).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    turn.tools.push(ToolRun {
+                        id: String::new(),
+                        name: name.into(),
+                        detail: tool_detail(tc.get("args").unwrap_or(&Value::Null)),
+                        error: None,
+                        at: turn.texts.len(),
+                    });
+                }
+                continue;
+            }
+            _ => {}
         }
         let Some(content) = row.pointer("/message/content") else { continue };
         match row.get("type").and_then(Value::as_str) {
@@ -213,5 +261,23 @@ mod tests {
         assert!(t.tools.is_empty());
         assert_eq!(t.todos.len(), 2);
         assert_eq!(t.todos[1], Todo { content: "테스트".into(), status: "in_progress".into(), active: "테스트 실행 중".into() });
+    }
+
+    #[test]
+    fn parses_agy_transcript_turns() {
+        let lines = [
+            r#"{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>\nAGY GUI 확인\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\ntime\n</ADDITIONAL_METADATA>"}"#,
+            r#"{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","model":"gemini-4-hydrogen-medium","input_tokens":1000,"cache_read_tokens":500,"tool_calls":[{"name":"run_command","args":{"CommandLine":"cargo test"}}]}"#,
+            r#"{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","model":"gemini-4-hydrogen-medium","input_tokens":1200,"cache_read_tokens":800,"content":"모두 통과했습니다."}"#,
+        ]
+        .join("\n");
+        let t = parse_turn(&lines);
+        assert_eq!(t.prompt, "AGY GUI 확인");
+        assert_eq!(t.model, "gemini-4-hydrogen-medium");
+        assert_eq!(t.context_tokens, 2000);
+        assert_eq!(t.tools.len(), 1);
+        assert_eq!(t.tools[0].name, "run_command");
+        assert_eq!(t.tools[0].detail, "cargo test");
+        assert_eq!(t.texts, vec!["모두 통과했습니다."]);
     }
 }

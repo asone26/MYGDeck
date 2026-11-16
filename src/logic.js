@@ -43,6 +43,8 @@ export function hookStatus(event, data, current) {
   switch (event) {
     case "prompt":
       return { status: "working", text: "작업 중" };
+    case "invocation":
+      return current === "working" ? null : { status: "working", text: "작업 중" };
     case "tool":
       return { status: "working", text: toolText(data) };
     case "notify": {

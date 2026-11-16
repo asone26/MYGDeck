@@ -47,6 +47,16 @@ pub fn send(event: &str, arg_payload: Option<&str>) {
     send_to(&id, &port, event, &input);
 }
 
+/// Variant for agents (Antigravity CLI) that require a JSON object on stdout even when idle outside the deck.
+pub fn send_json(event: &str) {
+    send(event, None);
+    let reply = if event == "stop" { r#"{"decision":"allow"}"# } else { "{}" };
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(reply.as_bytes());
+    let _ = out.write_all(b"\n");
+    let _ = out.flush();
+}
+
 pub fn send_to(id: &str, port: &str, event: &str, payload: &str) {
     let Ok(port) = port.parse::<u16>() else { return };
     let line = format!("{id}\t{event}\t{}\n", trim_payload(payload));
@@ -66,16 +76,19 @@ fn clip(v: Option<&Value>, max: usize) -> Value {
 /// Keep only what the deck shows. Tool inputs can carry whole file contents.
 pub fn trim_payload(raw: &str) -> String {
     let v: Value = serde_json::from_str(raw).unwrap_or(Value::Null);
-    let input = v.get("tool_input");
-    let detail = ["file_path", "command", "pattern", "description", "url", "path"]
-        .iter()
-        .find_map(|k| input.and_then(|t| t.get(*k)).filter(|x| x.is_string()));
+    let input = v.get("tool_input").or_else(|| v.pointer("/toolCall/args"));
+    let detail = [
+        "file_path", "command", "pattern", "description", "url", "path",
+        "CommandLine", "Path", "TargetFile", "Pattern", "Query", "Url",
+    ]
+    .iter()
+    .find_map(|k| input.and_then(|t| t.get(*k)).filter(|x| x.is_string()));
     json!({
         "message": clip(v.get("message"), 200),
-        "prompt": clip(v.get("prompt"), 300),
-        "tool": clip(v.get("tool_name"), 60),
+        "prompt": clip(v.get("prompt").or_else(|| v.get("lastUserInput")), 300),
+        "tool": clip(v.get("tool_name").or_else(|| v.pointer("/toolCall/name")), 60),
         "detail": clip(detail, 200),
-        "transcript": clip(v.get("transcript_path"), 1000),
+        "transcript": clip(v.get("transcript_path").or_else(|| v.get("transcriptPath")), 1000),
     })
     .to_string()
 }
@@ -95,6 +108,34 @@ pub fn write_claude_settings(app: &AppHandle, exe: &str) -> Result<String, Box<d
     let path = dir.join("claude-hooks.json");
     std::fs::write(&path, settings.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Register MYG Deck lifecycle hooks in `~/.gemini/config/hooks.json` for Antigravity CLI (`agy`),
+/// preserving any user-defined hook groups. Outside the deck (`MYGDECK_ID` unset) the hook exits
+/// immediately with `{}` so standalone `agy` runs stay unaffected.
+pub fn write_agy_hooks(exe: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = crate::config::home().join(".gemini").join("config");
+    if !dir.exists() && crate::pty::find_program("agy").is_none() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("hooks.json");
+    let mut root = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Map<String, Value>>(&s).ok())
+        .unwrap_or_default();
+    let cmd = |ev: &str| json!({ "type": "command", "command": format!("\"{exe}\" --hook-json {ev}") });
+    root.insert(
+        "mygdeck".into(),
+        json!({
+            "SessionStart": [cmd("session")],
+            "PreInvocation": [cmd("invocation")],
+            "PostToolUse": [{ "matcher": "*", "hooks": [cmd("tool")] }],
+            "Stop": [cmd("stop")],
+        }),
+    );
+    std::fs::write(&path, serde_json::to_string_pretty(&Value::Object(root))?)?;
+    Ok(())
 }
 
 #[cfg(test)]

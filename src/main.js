@@ -8,6 +8,7 @@ import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Card } from "./card.js";
+import { initCosmos } from "./cosmos.js";
 import { openConnections, refreshPool } from "./connections.js";
 import { ptys, setTermFontSize, setTermTheme } from "./pty.js";
 import { exportMarkdown } from "./summary.js";
@@ -15,6 +16,7 @@ import { ICONS, icon, statusIcon } from "./icons.js";
 import { DENSITIES, autoLayout, findFileConflicts, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
+initCosmos($("cosmos"));
 const deck = $("deck");
 const overlay = $("overlay");
 

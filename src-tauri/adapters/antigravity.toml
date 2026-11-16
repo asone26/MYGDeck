@@ -7,5 +7,6 @@ resume_args = "--continue"
 mention = "@{path}"
 effort_cmd = "/effort {effort}"
 efforts = ["low", "medium", "high", "xhigh", "max"]
-status = "idle"
+context_limit = 1000000
+status = "hooks"
 commands = ["/resume", "/rewind", "/effort", "/usage", "/agents", "/config"]

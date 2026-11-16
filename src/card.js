@@ -29,7 +29,7 @@ const TEMPLATE = `
   <details class="m-note"><summary>메모</summary><textarea class="note-ta" rows="4" placeholder="이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…"></textarea></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
-<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><div class="shell-bar"><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button><button class="shell-clear" title="터미널 화면 지우기">지우기</button><span class="shell-scripts"></span></div></div>
+<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><div class="shell-bar"><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button><button class="shell-clear" title="터미널 화면 지우기">지우기</button><button class="shell-new" title="현재 터미널을 종료하고 새 셸로 다시 열기">새로 열기</button><span class="shell-scripts"></span></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>
@@ -89,6 +89,8 @@ export class Card {
     this.syncPerm();
     this.$(".shell-fix").onclick = () => this.fixShellError();
     this.$(".shell-send").onclick = () => this.sendShellOutput();
+    this.$(".shell-clear").onclick = () => this.shell?.clear();
+    this.$(".shell-new").onclick = () => this.restartShell();
     const grip = this.$(".shell-grip");
     grip.onpointerdown = (e) => {
       grip.setPointerCapture(e.pointerId);
@@ -317,7 +319,13 @@ export class Card {
     if (value === "@wt-merge") return this.mergeWorktree();
     if (value === "@wt-remove") return this.removeWorktree();
     const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
-    this.rotate(next, next === this.adapter ? "사용자가 새 세션을 요청했습니다." : `에이전트를 ${next.name}(으)로 바꿉니다.`);
+    if (!next || this.rotating) return;
+    if (next === this.adapter) {
+      this.rotate(next, "사용자가 새 세션을 요청했습니다.");
+    } else {
+      this.nextAdapter = next;
+      this.renew(false);
+    }
   }
 
   setIndex(i) {
@@ -667,7 +675,7 @@ export class Card {
       return this.afterTurn();
     }
     if (data?.transcript) this.transcript = data.transcript;
-    if (event === "prompt") {
+    if (event === "prompt" || (event === "invocation" && this.status !== "working")) {
       // Subagent reports and task notices reach the agent as prompts: it keeps working on the same request.
       const notice = isAgentNotice(data?.prompt);
       if (!notice && (this.turnAsk || this.turn?.texts?.length)) this.history = [...this.history, { ask: this.turnAsk, texts: this.turn?.texts ?? [], checkpoint: this.turnCheckpoint }].slice(-50);
@@ -681,6 +689,9 @@ export class Card {
         this.turnAsk = data?.prompt && !data.prompt.includes("[mygdeck]") ? data.prompt.replace(/\s+/g, " ").trim() : null;
         this.turn = null;
       }
+    }
+    if (event === "invocation" && this.status === "working") {
+      this.peekTurn();
     }
     if (event === "tool") {
       this.lastTool = data;
@@ -1072,8 +1083,23 @@ export class Card {
   toggleShell() {
     const box = this.$(".shell");
     if (!this.shell) {
-      box.hidden = false;
-      this.$(".shell-clear").onclick = () => this.shell?.clear();
+      this.openShell();
+      return;
+    }
+    box.hidden = !box.hidden;
+    if (box.hidden) this.focusDefault();
+    else this.shell.term.focus();
+  }
+
+  openShell({ fresh = false } = {}) {
+    const box = this.$(".shell");
+    if (fresh && this.shell) {
+      this.shell.dispose();
+      this.shell = null;
+    }
+    box.hidden = false;
+    if (!this.shellScriptsLoaded) {
+      this.shellScriptsLoaded = true;
       invoke("read_project_scripts", { root: this.root }).then((scripts) => {
         const host = this.$(".shell-scripts");
         if (!host) return;
@@ -1087,23 +1113,23 @@ export class Card {
           host.append(b);
         }
       }).catch(() => {});
-      this.shell = new Pty(box, {
-        key: `${this.root}#shell`,
-        cwd: this.root,
-        command: this.app.shell,
-        scrollback: 2000,
-        onFileLink: (rel, line) => this.viewer.open(rel, "code", line),
-      });
-      requestAnimationFrame(async () => {
-        const live = this.app.takeLive(this.shell.key);
-        if (!(live && (await this.shell.attach(live.id)))) this.shell.start();
-        this.shell.term.focus();
-      });
-      return;
     }
-    box.hidden = !box.hidden;
-    if (box.hidden) this.focusDefault();
-    else this.shell.term.focus();
+    this.shell = new Pty(box, {
+      key: `${this.root}#shell`,
+      cwd: this.root,
+      command: this.app.shell,
+      scrollback: 2000,
+      onFileLink: (rel, line) => this.viewer.open(rel, "code", line),
+    });
+    requestAnimationFrame(async () => {
+      const live = fresh ? null : this.app.takeLive(this.shell.key);
+      if (!(live && (await this.shell.attach(live.id)))) this.shell.start();
+      this.shell.term.focus();
+    });
+  }
+
+  restartShell() {
+    this.openShell({ fresh: true });
   }
 
   sendShellOutput() {
