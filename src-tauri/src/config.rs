@@ -9,6 +9,10 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spec_file: Option<String>,
     /// Custom launch command, for agents without an adapter (e.g. `ssh host claude`).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -10,6 +10,7 @@ pub mod mobile;
 pub mod pty;
 pub mod turn;
 pub mod watch;
+pub mod worktree;
 
 use tauri::Manager;
 
@@ -107,13 +108,13 @@ pub fn run() {
             fsx::git_switch_branch,
             fsx::search_in_files,
             fsx::git_create_pr,
-            fsx::git_checkpoint_create,
-            fsx::git_checkpoint_restore,
-            fsx::git_changed_since,
+            worktree::git_checkpoint_create,
+            worktree::git_checkpoint_restore,
+            worktree::git_changed_since,
             fsx::git_shortstat,
-            fsx::git_worktree_add,
-            fsx::git_worktree_merge,
-            fsx::git_worktree_remove,
+            worktree::git_worktree_add,
+            worktree::git_worktree_merge,
+            worktree::git_worktree_remove,
             fsx::save_paste,
             fsx::open_file,
             fsx::rename_file,

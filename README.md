@@ -28,14 +28,14 @@ npx tauri build --bundles app     # macOS: src-tauri/target/release/bundle/macos
 ```json
 {
   "projects": [
-    { "path": "C:/work/mygstat", "agent": "claude-code", "spec_file": "MASTER_SPEC.md" },
+    { "path": "C:/work/mygstat", "agent": "claude-code", "model": "opus", "effort": "medium", "spec_file": "MASTER_SPEC.md" },
     { "path": "C:/work/api", "command": "ssh -t myserver claude" },
     { "path": "C:/work/web", "resume": false }
   ]
 }
 ```
 
-`resume: false`는 재부팅 뒤 덱을 열 때 이전 대화 대신 새 대화로 시작한다(아래 [세션 유지](#세션-유지) 참고). 서버 쪽 세션까지 유지하려면 [docs/remote.md](docs/remote.md)의 tmux 설정을 쓴다.
+`model`과 `effort`는 카드 입력창에서 바꾸면 자동으로 저장되어 다음 실행에도 유지된다. `resume: false`는 재부팅 뒤 덱을 열 때 이전 대화 대신 새 대화로 시작한다(아래 [세션 유지](#세션-유지) 참고). 서버 쪽 세션까지 유지하려면 [docs/remote.md](docs/remote.md)의 tmux 설정을 쓴다.
 
 ## 단축키
 
@@ -86,7 +86,8 @@ mygdeck-cli mobile on         # 휴대폰 대시보드 연결 켜기 (off로 끄
 
 ## 카드 기능
 
-- **GUI 화면**: hooks를 지원하는 에이전트(Claude Code)는 요청·진행 단계·답변을 정리해 보여 준다. 답변이 질문으로 끝나면 선택지(`1번으로 진행해줘` 등)나 네/아니요를 버튼으로 낸다.
+- **GUI 화면**: hooks를 지원하는 에이전트(Claude Code, Antigravity)는 요청·진행 단계·답변을 정리해 보여 준다. 답변이 질문으로 끝나면 선택지(`1번으로 진행해줘` 등)나 네/아니요를 버튼으로 낸다.
+- **모델 · Effort 선택 및 유지**: 입력창의 `[모델]`·`[Effort]` 드롭다운으로 모델과 추론 강도를 바꿀 수 있다(어댑터 전환 시 기본값이 자동 선택되며, 마지막으로 고른 값은 `mygdeck.json`에 저장되어 재실행 후에도 유지된다).
 - **변경 배지**: 헤더의 `+12 −3`은 마지막 커밋 이후 바뀐 줄 수다. 누르면 변경 파일 목록과 첫 파일의 변경 화면이 열린다.
 - **변경 검토**: 파일 패널의 `변경된 파일`에서 파일을 누르면 마지막 커밋과 비교한 화면(지운 줄 빨강, 추가한 줄 초록, 옛·새 줄 번호)이 열린다. `변경 | 코드`로 파일 전체와 오가고, `‹ ›` 또는 `[` `]`로 다음 변경 파일로 넘어간다. diff 줄 옆 `+` 버튼으로 리뷰 코멘트를 여러 곳에 달아 두고 `리뷰 N건 보내기`로 한 번에 입력창에 넣을 수 있다. `되돌리기`는 두 번 눌러야 실행되며 그 파일을 마지막 커밋 상태로 되돌린다(새 파일이면 `새 파일 삭제`로 지운다). 다 봤으면 파일 패널의 `커밋`으로 남긴다.
 - **동시 작업 충돌 경고**: 같은 저장소나 worktree(`-wtN`)에서 여러 카드를 동시에 돌릴 때 서로 같은 파일을 수정하면 카드 헤더에 `충돌 주의 N` 배지와 파일 목록의 `중복` 표시로 미리 알려 준다.
@@ -102,8 +103,8 @@ mygdeck-cli mobile on         # 휴대폰 대시보드 연결 켜기 (off로 끄
 
 ## 에이전트 어댑터
 
-`src-tauri/adapters/*.toml`이 기본 어댑터이고, `~/.mygdeck/adapters/*.toml`을 추가하면 새 에이전트를 붙일 수 있다(코드 수정 없음). 필드 설명과 예시는 [docs/adapters.md](docs/adapters.md).
-Claude Code는 덱 전용 hooks 설정을 `--settings`로 넘겨 승인 대기·작업 완료 상태를 받는다. 사용자의 Claude 설정 파일은 건드리지 않는다.
+`src-tauri/adapters/*.toml`(`claude-code`, `codex`, `gemini`, `antigravity`)이 기본 어댑터이고, `~/.mygdeck/adapters/*.toml`을 추가하면 새 에이전트를 붙일 수 있다(코드 수정 없음). 필드 설명과 예시는 [docs/adapters.md](docs/adapters.md).
+Claude Code와 Antigravity는 덱 전용 hooks 설정으로 승인 대기·작업 완료 상태를 받는다. 사용자의 기존 에이전트 설정 파일은 건드리지 않는다.
 
 ## 테스트
 

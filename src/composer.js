@@ -59,8 +59,16 @@ export class Composer {
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
       select.append(new Option("모델", ""), ...a.models.map((m) => new Option(m, m)));
-      select.value = a.base_model; // matches the launch flags
-      select.onchange =() => select.value && (card.userModel = true) && card.sendToAgent(a.model_cmd.replace("{model}", select.value));
+      select.value = (card.cfg.model && a.models.includes(card.cfg.model))
+        ? card.cfg.model
+        : (a.base_model && a.models.includes(a.base_model) ? a.base_model : a.models[0]);
+      select.onchange = () => {
+        if (!select.value) return;
+        card.userModel = true;
+        card.cfg.model = select.value;
+        card.app.save?.();
+        card.sendToAgent(a.model_cmd.replace("{model}", select.value));
+      };
     } else {
       select.hidden = true;
     }
@@ -68,10 +76,17 @@ export class Composer {
     if (a?.effort_cmd && a.efforts?.length) {
       effort.append(new Option("Effort", ""), ...a.efforts.map((e) => new Option(e, e)));
       const launchEffort = /--effort (\S+)/.exec(a.launch)?.[1];
-      effort.value = (launchEffort && a.efforts.includes(launchEffort))
-        ? launchEffort
-        : (a.efforts.includes("medium") ? "medium" : a.efforts[0]);
-      effort.onchange = () => effort.value && card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
+      effort.value = (card.cfg.effort && a.efforts.includes(card.cfg.effort))
+        ? card.cfg.effort
+        : (launchEffort && a.efforts.includes(launchEffort))
+          ? launchEffort
+          : (a.efforts.includes("medium") ? "medium" : a.efforts[0]);
+      effort.onchange = () => {
+        if (!effort.value) return;
+        card.cfg.effort = effort.value;
+        card.app.save?.();
+        card.sendToAgent(a.effort_cmd.replace("{effort}", effort.value));
+      };
     } else {
       effort.hidden = true;
     }

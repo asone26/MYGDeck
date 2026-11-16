@@ -10,6 +10,7 @@ import { Composer } from "./composer.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
 import { MENU, keyLabel, ROTATE_AT, contextLimit, detectLocalhostUrl, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, pickErrorLines, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { elapsed, renderSummary, summaryLines } from "./summary.js";
+import { renderAgentPick, openAgentMenu, closeAgentMenu, onAgentPick, openWorktree, mergeWorktree, removeWorktree } from "./agent_menu.js";
 
 const TEMPLATE = `
 <div class="head">
@@ -45,6 +46,7 @@ export class Card {
     this.id = `c${++cardSeq}`;
     this.color = projectColor(this.name, app.cards.map((c) => c.color));
     this.hooks = adapter?.status === "hooks";
+    this.userModel = !!cfg.model;
     this.files = null;
     this.peek = [];
     this.view = "gui"; // preferred view; agents without hooks always show the raw CLI
@@ -138,7 +140,10 @@ export class Card {
   launchCommand(resume = false) {
     if (this.cfg.command) return this.cfg.command;
     if (!this.adapter) return this.app.shell;
-    return [this.adapter.launch, this.adapter.hook_args, resume && this.adapter.resume_args].filter(Boolean).join(" ");
+    let launch = this.adapter.launch;
+    if (this.cfg.model && /--model \S+/.test(launch)) launch = launch.replace(/--model \S+/, `--model ${this.cfg.model}`);
+    if (this.cfg.effort && /--effort \S+/.test(launch)) launch = launch.replace(/--effort \S+/, `--effort ${this.cfg.effort}`);
+    return [launch, this.adapter.hook_args, resume && this.adapter.resume_args].filter(Boolean).join(" ");
   }
 
   /**
@@ -192,141 +197,11 @@ export class Card {
     this.renew();
   }
 
-  renderAgentPick() {
-    const pick = this.pick;
-    // Composer rebuilds its row on agent switch, so re-attach the picker to its bottom-left each time.
-    this.closeAgentMenu();
-    this.$(".composer").prepend(pick);
-    const curLabel = this.adapter ? `${this.adapter.name}${this.adapter.detected ? "" : " (미설치)"}` : (this.cfg.command ? "custom" : "shell");
-    pick.innerHTML = `<span class="agent-lbl"></span>${icon(ICONS.ChevronDown, "agent-chev")}`;
-    pick.querySelector(".agent-lbl").textContent = curLabel;
-    pick.disabled = !this.adapter;
-  }
-
-  toggleAgentMenu() {
-    if (this.agentPop) this.closeAgentMenu();
-    else this.openAgentMenu();
-  }
-
-  openAgentMenu() {
-    if (!this.adapter) return;
-    this.closeAgentMenu();
-    const pop = document.createElement("div");
-    pop.className = "agent-pop";
-    pop.setAttribute("role", "menu");
-    pop.style.setProperty("--pc", this.color);
-
-    const head = document.createElement("div");
-    head.className = "agent-pop-head";
-    head.innerHTML = `<span class="agent-pop-dot"></span><span class="agent-pop-name"></span><span class="agent-pop-tag">현재</span>`;
-    head.querySelector(".agent-pop-name").textContent = `${this.adapter.name}${this.adapter.detected ? "" : " (미설치)"}`;
-    pop.append(head);
-
-    const addItem = ({ ic, label, sub, value, badge, badgeOff, disabled, danger }) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `agent-item${danger ? " danger" : ""}`;
-      b.setAttribute("role", "menuitem");
-      if (disabled) b.disabled = true;
-      b.innerHTML = `${icon(ic)}<span class="agent-item-text"><span class="agent-item-lbl"></span>${sub ? `<span class="agent-item-sub"></span>` : ""}</span>${badge ? `<span class="agent-pop-badge${badgeOff ? " off" : ""}"></span>` : ""}`;
-      b.querySelector(".agent-item-lbl").textContent = label;
-      if (sub) b.querySelector(".agent-item-sub").textContent = sub;
-      if (badge) b.querySelector(".agent-pop-badge").textContent = badge;
-      b.onclick = () => {
-        this.closeAgentMenu();
-        this.onAgentPick(value);
-      };
-      pop.append(b);
-    };
-    const addSep = () => {
-      const s = document.createElement("div");
-      s.className = "agent-pop-sep";
-      pop.append(s);
-    };
-
-    addItem({ ic: ICONS.RotateCw, label: "새 세션으로 이어가기", sub: "진행 내역 저장 후 새 대화 시작", value: "@renew" });
-    const others = this.app.adapters.filter((a) => a.name !== this.adapter?.name);
-    if (others.length) {
-      addSep();
-      for (const a of others) {
-        addItem({
-          ic: ICONS.ArrowRight,
-          label: a.name,
-          value: a.name,
-          badge: a.detected ? "전환" : "미설치",
-          badgeOff: !a.detected,
-          disabled: !a.detected,
-        });
-      }
-    }
-    addSep();
-    addItem({ ic: ICONS.GitBranch, label: "worktree로 하나 더 열기", value: "@worktree" });
-    // Cards opened by "⑂": bring the work home or throw the copy away (git checks it really is one).
-    if (/-wt\d+$/.test(this.root)) {
-      addItem({ ic: ICONS.GitMerge, label: "원래 폴더에 합치기", value: "@wt-merge" });
-      addItem({ ic: ICONS.X, label: "이 worktree 버리기", value: "@wt-remove", danger: true });
-    }
-
-    document.body.append(pop);
-    const r = this.pick.getBoundingClientRect();
-    const pr = pop.getBoundingClientRect();
-    const openUp = r.top - pr.height - 6 >= 8 || r.bottom + pr.height + 6 > window.innerHeight - 8;
-    const top = openUp ? Math.max(8, r.top - pr.height - 6) : Math.min(window.innerHeight - pr.height - 8, r.bottom + 6);
-    const left = Math.min(Math.max(8, r.left), window.innerWidth - pr.width - 8);
-    pop.style.top = `${top}px`;
-    pop.style.left = `${left}px`;
-
-    this.agentPop = pop;
-    this.pick.classList.add("open");
-    this.pick.setAttribute("aria-expanded", "true");
-
-    const onPointerDown = (e) => { if (!pop.contains(e.target) && !this.pick.contains(e.target)) this.closeAgentMenu(); };
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") { e.stopPropagation(); this.closeAgentMenu(); this.pick.focus(); return; }
-      const items = [...pop.querySelectorAll(".agent-item:not(:disabled)")];
-      if (!items.length) return;
-      const cur = items.indexOf(document.activeElement);
-      if (e.key === "ArrowDown") { e.preventDefault(); items[(cur + 1) % items.length].focus(); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); items[(cur - 1 + items.length) % items.length].focus(); }
-      else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
-      else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
-    };
-    const onClose = () => this.closeAgentMenu();
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("resize", onClose);
-    window.addEventListener("scroll", onClose, true);
-    this._agentMenuOff = () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("resize", onClose);
-      window.removeEventListener("scroll", onClose, true);
-    };
-  }
-
-  closeAgentMenu() {
-    this._agentMenuOff?.();
-    this._agentMenuOff = null;
-    this.agentPop?.remove();
-    this.agentPop = null;
-    this.pick?.classList.remove("open");
-    this.pick?.setAttribute("aria-expanded", "false");
-  }
-
-  onAgentPick(value) {
-    if (!value) return;
-    if (value === "@worktree") return this.openWorktree();
-    if (value === "@wt-merge") return this.mergeWorktree();
-    if (value === "@wt-remove") return this.removeWorktree();
-    const next = value === "@renew" ? this.adapter : this.app.adapters.find((a) => a.name === value);
-    if (!next || this.rotating) return;
-    if (next === this.adapter) {
-      this.rotate(next, "사용자가 새 세션을 요청했습니다.");
-    } else {
-      this.nextAdapter = next;
-      this.renew(false);
-    }
-  }
+  renderAgentPick() { renderAgentPick(this); }
+  toggleAgentMenu() { if (this.agentPop) closeAgentMenu(this); else openAgentMenu(this); }
+  openAgentMenu() { openAgentMenu(this); }
+  closeAgentMenu() { closeAgentMenu(this); }
+  onAgentPick(value) { onAgentPick(this, value); }
 
   setIndex(i) {
     this.$(".idx").textContent = `#${i + 1}`;
@@ -552,62 +427,9 @@ export class Card {
     if (text) this.composer.insert("\n```\n" + text + "\n```\n");
   }
 
-  /** A second copy of this project in a git worktree, as its own card with its own agent (B4). */
-  async openWorktree() {
-    try {
-      const path = await invoke("git_worktree_add", { root: this.root });
-      this.app.addCard({
-        path,
-        agent: this.adapter?.name,
-        worktree_setup: this.cfg.worktree_setup,
-        post_turn_cmd: this.cfg.post_turn_cmd,
-      });
-      if (this.cfg.worktree_setup) {
-        invoke("run_shell_cmd", { root: path, cmd: this.cfg.worktree_setup }).then((res) => {
-          if (!res.ok) message(`worktree 초기화 명령 실패 (${res.code}):\n${res.output}`, { kind: "warning" });
-        }).catch((e) => message(`worktree 초기화 실패: ${e}`, { kind: "warning" }));
-      }
-    } catch (e) {
-      message(`worktree를 만들지 못했습니다: ${e}`, { kind: "error" });
-    }
-  }
-
-  /** Merge this worktree's commits into the main folder's branch. Conflicts are refused, not left half-done. */
-  async mergeWorktree() {
-    try {
-      await invoke("git_worktree_merge", { root: this.root });
-      message("원래 폴더에 합쳤습니다. 이 worktree는 이제 버려도 됩니다.", { kind: "info" });
-    } catch (e) {
-      const msg = String(e);
-      if (/겹쳐서|conflict/i.test(msg)) {
-        const delegate = await ask(`합치지 못했습니다:\n${msg}\n\n에이전트에게 원래 브랜치와의 충돌 해결을 요청할까요?`, { title: "병합 충돌", kind: "warning", okLabel: "에이전트에 요청", cancelLabel: "닫기" });
-        if (delegate) this.composer.insert(`원래 폴더 브랜치와 worktree 병합 중 충돌이 발생했습니다. 변경 내용을 확인하고 충돌이 없도록 정리해줘:\n\`\`\`\n${msg.slice(0, 1200)}\n\`\`\`\n`);
-      } else {
-        message(`합치지 못했습니다: ${msg}`, { kind: "error" });
-      }
-    }
-  }
-
-  /** Close the card (its agent holds the folder open), then remove the worktree. */
-  async removeWorktree() {
-    const ok = await ask(`${this.name}: 카드를 닫고 이 worktree 폴더를 지웁니다. 커밋하지 않은 변경이 있으면 지우지 않습니다.`, { title: "worktree 버리기", kind: "warning", okLabel: "버리기", cancelLabel: "취소" });
-    if (!ok) return;
-    await this.app.closeCard(this);
-    if (this.app.cards.includes(this)) return; // the user kept a busy card open
-    let err;
-    // Windows keeps the folder locked until the agent process has fully exited.
-    for (let i = 0; i < 6; i++) {
-      try {
-        const branchGone = await invoke("git_worktree_remove", { root: this.root });
-        if (!branchGone) message("폴더는 지웠습니다. 합치지 않은 저장점이 있어 브랜치는 남겨 두었습니다.", { kind: "info" });
-        return;
-      } catch (e) {
-        err = e;
-        await sleep(500);
-      }
-    }
-    message(`${err}`, { kind: "error" });
-  }
+  openWorktree() { return openWorktree(this); }
+  mergeWorktree() { return mergeWorktree(this); }
+  removeWorktree() { return removeWorktree(this); }
 
   onOutput() {
     // The CLI redraws right after reporting a turn end; that is not new work.
@@ -905,10 +727,15 @@ export class Card {
   setAdapter(a) {
     if (a === this.adapter) return;
     this.adapter = a;
+    this.cfg.agent = a?.name;
+    delete this.cfg.model;
+    delete this.cfg.effort;
+    this.userModel = false;
     this.hooks = a?.status === "hooks";
     this.agent.command = this.launchCommand();
     this.composer = new Composer(this, this.$(".composer"));
     this.renderAgentPick();
+    this.app.save?.();
   }
 
   clearQueue() {
