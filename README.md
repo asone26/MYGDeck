@@ -1,4 +1,4 @@
-**English** · [한국어](README.ko.md)
+**English** · [한국어](README.ko.md) · [Vision & Architecture](VISION.md)
 
 # MYG Deck
 

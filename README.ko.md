@@ -1,9 +1,9 @@
-[English](README.md) · **한국어**
+[English](README.md) · **한국어** · [Vision & Architecture](VISION.md)
 
 # MYG Deck
 
 여러 프로젝트의 코딩 에이전트 CLI(Claude Code, Codex, Gemini CLI…)를 한 창에서 나란히 굴리는 바이브 코딩용 IDE.
-창을 닫아도 에이전트는 계속 돌고, 다시 열면 하던 화면 그대로 이어 붙는다. 기획 문서는 [master.md](master.md).
+창을 닫아도 에이전트는 계속 돌고, 다시 열면 하던 화면 그대로 이어 붙는다. 설계 철학과 아키텍처는 [VISION.md](VISION.md) 참고.
 
 ## 지원 현황 및 검증 상태
 
