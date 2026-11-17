@@ -891,7 +891,8 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .s-answer code.s-file { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .s-answer code.s-file:hover { color: var(--work); background: rgba(var(--ink), 0.1); }
 .s-restore { color: var(--warn); }
-.b-mute { display: inline-grid; place-items: center; padding: 3px 5px; border-radius: 6px; border: 0; background: none; color: var(--faint); cursor: pointer; }
+.b-mute { display: none; place-items: center; padding: 3px 5px; border-radius: 6px; border: 0; background: none; color: var(--faint); cursor: pointer; }
+.card:is(:hover, :focus-within) .b-mute, .b-mute.muted { display: inline-grid; }
 .b-mute:hover { color: var(--text); background: rgba(var(--ink), 0.08); }
 .b-mute.muted { color: var(--warn); }
 .composer { position: relative; }
@@ -978,9 +979,11 @@ button.stop:hover { background: color-mix(in srgb, var(--bad) 16%, transparent);
 .ds-grid button, .conn-retry { padding: 3px 9px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; font-size: 12px; }
 .ds-grid button:hover, .conn-retry:hover { border-color: var(--work); }
 .vf-in:focus, .xfilter:focus, .ov-filter:focus { outline: 1px solid var(--work); border-color: var(--work); }
-.b-pin { opacity: 0.55; }
+.b-pin { display: none; opacity: 0.55; }
+.card:is(:hover, :focus-within) .b-pin, .b-pin.on { display: inline-flex; }
 .b-pin.on { opacity: 1; color: var(--work); }
 .b-pin.on .ic { fill: currentColor; }
+.xfilter-row[hidden] { display: none; }
 .tile-pin { width: 12px; height: 12px; color: var(--work); flex-shrink: 0; }
 .conn-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px; font-size: 12px; background: color-mix(in srgb, var(--bad, #e06c75) 14%, transparent); border-bottom: 1px solid var(--line); }
 .conn-banner[hidden] { display: none; }

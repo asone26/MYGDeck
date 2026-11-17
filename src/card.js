@@ -398,7 +398,8 @@ export class Card {
     if (!b.hidden) b.textContent = `+${d.added} −${d.removed}`;
     const br = this.$(".b-branch");
     this.prUrl = info?.pr_url ?? null;
-    br.hidden = !info?.branch;
+    const isFeature = info?.branch && !["main", "master"].includes(info.branch);
+    br.hidden = !isFeature;
     if (!br.hidden) {
       br.textContent = this.prUrl ? `${info.branch} ↗` : info.branch;
       br.title = this.prUrl ? `${info.branch} · 클릭하면 PR/Compare 페이지 열기` : `현재 브랜치: ${info.branch}`;

@@ -5,6 +5,7 @@ pub mod config;
 pub mod crash;
 pub mod daemon;
 pub mod fsx;
+pub mod git;
 pub mod hooks;
 pub mod mobile;
 pub mod pty;

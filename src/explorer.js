@@ -14,12 +14,12 @@ export class Explorer {
       <button class="x-ai" title="AI로 변경사항 3줄 요약 및 주의할 점 점검" hidden>AI 요약</button>
       <span class="sp"></span>
       <select class="x-branches" title="브랜치 전환 또는 새 브랜치 만들기" hidden></select>
-      <button class="x-stash" title="변경사항 임시 보관 (git stash)">보관</button>
+      <button class="x-stash" title="변경사항 임시 보관 (git stash)" hidden>보관</button>
       <button class="x-pull" title="원격 변경사항 가져오기 (git pull)" hidden>↓</button>
-      <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기">PR</button>
+      <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기" hidden>PR</button>
       <button class="x-save" title="바뀐 내용을 커밋합니다 · 메시지는 자동 생성">커밋</button>
       <button class="x-push" title="커밋을 원격 저장소로 올립니다 (git push)">푸시</button></div>
-      <div class="xfilter-row"><input class="xfilter" placeholder="파일 이름 필터…" spellcheck="false"><button class="x-newf" title="새 파일 만들기">+파일</button><button class="x-newd" title="새 폴더 만들기">+폴더</button></div>
+      <div class="xfilter-row" hidden><input class="xfilter" placeholder="파일 이름 필터…" spellcheck="false"><button class="x-newf" title="새 파일 만들기">+파일</button><button class="x-newd" title="새 폴더 만들기">+폴더</button></div>
       <div class="xmsg" hidden></div><div class="xlist"></div>`;
     this.list = el.querySelector(".xlist");
     this.msg = el.querySelector(".xmsg");
@@ -29,6 +29,8 @@ export class Explorer {
     this.turnBtn = el.querySelector(".x-turn");
     this.pullBtn = el.querySelector(".x-pull");
     this.stashBtn = el.querySelector(".x-stash");
+    this.prBtn = el.querySelector(".x-pr");
+    this.filterRow = el.querySelector(".xfilter-row");
     this.filterIn = el.querySelector(".xfilter");
     this.filterIn.oninput = () => {
       this.filterQuery = this.filterIn.value.trim();
@@ -141,6 +143,11 @@ export class Explorer {
     this.turnBtn.classList.toggle("on", this.turnOnly);
     this.allBtn.hidden = this.mode !== "changed" || total < 2;
     this.aiBtn.hidden = this.mode !== "changed" || total === 0;
+    this.stashBtn.hidden = total === 0 && !this.stashCount;
+    this.prBtn.hidden = !this.curBranch || ["main", "master"].includes(this.curBranch);
+    if (this.filterRow) {
+      this.filterRow.hidden = this.mode === "log" || (this.mode === "changed" && total < 5 && !this.filterQuery);
+    }
     this.saveBtn.classList.toggle("on", selected > 0);
     this.saveBtn.disabled = total > 0 && selected === 0;
     this.saveBtn.textContent = total > 0 && selected < total ? `커밋 (${selected}/${total})` : "커밋";
@@ -244,7 +251,7 @@ export class Explorer {
   }
 
   async refresh() {
-    const [st, ahead, behind, staged, since, branches, info] = await Promise.all([
+    const [st, ahead, behind, staged, since, branches, info, stashes] = await Promise.all([
       invoke("git_status", { root: this.card.root }).catch(() => []),
       invoke("git_ahead", { root: this.card.root }).catch(() => 0),
       invoke("git_behind", { root: this.card.root }).catch(() => 0),
@@ -254,8 +261,10 @@ export class Explorer {
         : null,
       invoke("git_branches", { root: this.card.root }).catch(() => []),
       invoke("git_branch_info", { root: this.card.root }).catch(() => null),
+      invoke("git_stash_list", { root: this.card.root }).catch(() => []),
     ]);
     this.curBranch = info?.branch ?? null;
+    this.stashCount = stashes?.length ?? 0;
     this.branchSel.hidden = !branches.length && !this.curBranch;
     if (!this.branchSel.hidden) {
       this.branchSel.textContent = "";
