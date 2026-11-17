@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { keyLabel, lineRange, mentionFor, parseDiff, addedRows, formatReviewComments } from "./logic.js";
+import { L } from "./i18n.js";
 
 // Syntax highlighting is the largest dependency; load it only when a file is first opened.
 let hljsLoad = null;
@@ -21,20 +22,20 @@ export class Viewer {
     el.innerHTML = `
       <div class="vbar"><span class="vpath"></span>
         <span class="vreview" hidden>
-          <span class="vseg"><button data-v="diff" title="마지막 커밋과 비교">변경</button><button data-v="code" title="파일 전체">코드</button></span>
+          <span class="vseg"><button data-v="diff" title="${L("마지막 커밋과 비교", "Compare with HEAD")}">${L("변경", "Diff")}</button><button data-v="code" title="${L("파일 전체", "Full file")}">${L("코드", "Code")}</button></span>
           <span class="vstat"></span>
-          <span class="vnav"><button class="v-prev" title="이전 변경 파일 ([)">‹</button><span class="vpos"></span><button class="v-next" title="다음 변경 파일 (])">›</button></span>
-          <span class="vnav"><button class="v-hprev" title="이전 변경 블록">▲</button><button class="v-hnext" title="다음 변경 블록">▼</button></span>
-          <button class="v-split" title="나란히(2열) 비교 보기">나란히</button>
-          <button class="v-ws" title="공백 변경 무시">공백무시</button>
+          <span class="vnav"><button class="v-prev" title="${L("이전 변경 파일 ([)", "Previous changed file ([)")}">‹</button><span class="vpos"></span><button class="v-next" title="${L("다음 변경 파일 (])", "Next changed file (])")}">›</button></span>
+          <span class="vnav"><button class="v-hprev" title="${L("이전 변경 블록", "Previous hunk")}">▲</button><button class="v-hnext" title="${L("다음 변경 블록", "Next hunk")}">▼</button></span>
+          <button class="v-split" title="${L("나란히(2열) 비교 보기", "Side-by-side diff")}">${L("나란히", "Split")}</button>
+          <button class="v-ws" title="${L("공백 변경 무시", "Ignore whitespace")}">${L("공백무시", "Ignore WS")}</button>
           <button class="v-revert"></button>
         </span>
-        <button class="v-md" title="마크다운 미리보기/원문 전환" hidden>미리보기</button>
-        <button class="v-find-btn" title="파일 내 검색 / 줄 이동 (Ctrl+F)">검색</button>
-        <button class="v-rev-send" title="작성한 리뷰 코멘트를 입력창에 넣기" hidden></button>
-        <button class="v-ins" title="${keyLabel("선택한 코드를 입력창에 넣기 (Ctrl+I)")}">@<span class="vl"> 입력창에 넣기</span></button>
-        <button class="v-close" title="닫기 (Esc)">×</button></div>
-      <div class="vfind" hidden><input class="vf-in" placeholder="검색어 또는 :줄번호…" spellcheck="false"><span class="vf-cnt"></span><button class="vf-prev" title="이전">▲</button><button class="vf-next" title="다음">▼</button><button class="vf-x" title="닫기">×</button></div>
+        <button class="v-md" title="${L("마크다운 미리보기/원문 전환", "Toggle Markdown preview")}" hidden>${L("미리보기", "Preview")}</button>
+        <button class="v-find-btn" title="${L("파일 내 검색 / 줄 이동 (Ctrl+F)", "Find / Go to line (Ctrl+F)")}">${L("검색", "Find")}</button>
+        <button class="v-rev-send" title="${L("작성한 리뷰 코멘트를 입력창에 넣기", "Insert review comments")}" hidden></button>
+        <button class="v-ins" title="${keyLabel(L("선택한 코드를 입력창에 넣기 (Ctrl+I)", "Insert selection (Ctrl+I)"))}">@<span class="vl"> ${L("입력창에 넣기", "Insert")}</span></button>
+        <button class="v-close" title="${L("닫기 (Esc)", "Close (Esc)")}">×</button></div>
+      <div class="vfind" hidden><input class="vf-in" placeholder="${L("검색어 또는 :줄번호…", "Search or :line…")}" spellcheck="false"><span class="vf-cnt"></span><button class="vf-prev" title="${L("이전", "Prev")}">▲</button><button class="vf-next" title="${L("다음", "Next")}">▼</button><button class="vf-x" title="${L("닫기", "Close")}">×</button></div>
       <div class="vnotice" hidden></div>
       <div class="vbody"><pre class="gutter"></pre><pre class="code"><code class="hljs"></code></pre><div class="vdiff" hidden></div><div class="vmd md" hidden></div><div class="vimg" hidden><img></div></div>`;
     this.code = el.querySelector("code");
@@ -171,8 +172,8 @@ export class Viewer {
     this.el.querySelector(".vnav").hidden = this.allDiffs || !list.length;
     this.revertBtn.hidden = this.allDiffs || i < 0;
     this.revertBtn.classList.remove("armed");
-    this.revertBtn.textContent = code === "A" ? "새 파일 삭제" : "되돌리기";
-    this.revertBtn.title = code === "A" ? "이 파일을 지웁니다 (마지막 커밋에 없는 새 파일)" : "이 파일을 마지막 커밋 상태로 되돌립니다";
+    this.revertBtn.textContent = code === "A" ? L("새 파일 삭제", "Delete new file") : L("되돌리기", "Revert");
+    this.revertBtn.title = code === "A" ? L("이 파일을 지웁니다 (마지막 커밋에 없는 새 파일)", "Delete untracked file") : L("이 파일을 마지막 커밋 상태로 되돌립니다", "Revert file to HEAD");
   }
 
   get isOpen() {

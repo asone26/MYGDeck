@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ICONS, icon } from "./icons.js";
+import { L, getLang, setLang } from "./i18n.js";
 import { keyLabel } from "./logic.js";
 
 const KEYS_STORE = "mygdeck.keys";
@@ -16,10 +17,10 @@ export function openBroadcast(app, showOverlay, closeOverlay) {
   const overlay = showOverlay("broadcast");
   const box = document.createElement("div");
   box.className = "qo mod-box";
-  box.innerHTML = `<div class="keys-head"><span class="qo-title">여러 프로젝트에 동시 지시 (브로드캐스트)</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">${L("여러 프로젝트에 동시 지시 (브로드캐스트)", "Broadcast Prompt")}</span><button class="keys-close" aria-label="${L("닫기", "Close")}">${icon(ICONS.X)}</button></div>
     <div class="mod-list"></div>
-    <textarea class="mod-ta" rows="4" placeholder="선택한 모든 카드에 동시에 보낼 지시를 입력하세요…"></textarea>
-    <div class="mod-foot"><button class="mod-send">선택한 카드에 전송</button></div>`;
+    <textarea class="mod-ta" rows="4" placeholder="${L("선택한 모든 카드에 동시에 보낼 지시를 입력하세요…", "Enter prompt to send to all selected cards…")}"></textarea>
+    <div class="mod-foot"><button class="mod-send">${L("선택한 카드에 전송", "Send to selected")}</button></div>`;
   box.querySelector(".keys-close").onclick = closeOverlay;
   const list = box.querySelector(".mod-list");
   app.cards.forEach((c, i) => {
@@ -44,11 +45,11 @@ export function openProjectSettings(card, save, showOverlay, closeOverlay) {
   const overlay = showOverlay("proj-settings");
   const box = document.createElement("div");
   box.className = "qo mod-box";
-  box.innerHTML = `<div class="keys-head"><span class="qo-title">${card.name} · 자동화 및 알림 설정</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
-    <label class="mod-field"><span>Worktree 생성 시 실행할 명령 (예: <code>npm ci</code>)</span><input class="qo-in f-wt" placeholder="비워 두면 .env 파일만 자동 복사"></label>
-    <label class="mod-field"><span>턴 종료 후 자동 검증 명령 (예: <code>npm test</code>)</span><input class="qo-in f-pt" placeholder="비워 두면 실행 안 함"></label>
-    <label class="mod-chk"><input type="checkbox" class="f-mute"> <span>이 프로젝트의 OS 알림 음소거</span></label>
-    <div class="mod-foot"><button class="mod-send">저장</button></div>`;
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">${card.name} · ${L("자동화 및 알림 설정", "Automation & Notifications")}</span><button class="keys-close" aria-label="${L("닫기", "Close")}">${icon(ICONS.X)}</button></div>
+    <label class="mod-field"><span>${L("Worktree 생성 시 실행할 명령 (예: <code>npm ci</code>)", "Setup command on new worktree (e.g. <code>npm ci</code>)")}</span><input class="qo-in f-wt" placeholder="${L("비워 두면 .env 파일만 자동 복사", "Leave empty to copy .env files only")}"></label>
+    <label class="mod-field"><span>${L("턴 종료 후 자동 검증 명령 (예: <code>npm test</code>)", "Post-turn verify command (e.g. <code>npm test</code>)")}</span><input class="qo-in f-pt" placeholder="${L("비워 두면 실행 안 함", "Leave empty to disable")}"></label>
+    <label class="mod-chk"><input type="checkbox" class="f-mute"> <span>${L("이 프로젝트의 OS 알림 음소거", "Mute OS notifications for this project")}</span></label>
+    <div class="mod-foot"><button class="mod-send">${L("저장", "Save")}</button></div>`;
   box.querySelector(".keys-close").onclick = closeOverlay;
   const wt = box.querySelector(".f-wt");
   const pt = box.querySelector(".f-pt");
@@ -70,21 +71,21 @@ export function openProjectSettings(card, save, showOverlay, closeOverlay) {
 
 export function openMobileGuide(showOverlay, closeOverlay) {
   const overlay = showOverlay("mobile-guide");
-  const url = "https://mygdeck.asone26g.workers.dev";
+  const url = "https://mygdeck.<your-subdomain>.workers.dev";
   const box = document.createElement("div");
   box.className = "qo mod-box";
-  box.innerHTML = `<div class="keys-head"><span class="qo-title">모바일 대시보드 연결 안내</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div>
-    <p class="mod-p">PC 데몬을 Cloudflare 터널로 연결해 휴대폰에서 상태 확인·승인·지시 전송을 할 수 있습니다.</p>
-    <div class="mod-row"><code>${url}</code><button class="mod-copy">주소 복사</button></div>
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">${L("모바일 대시보드 연결 안내", "Mobile Dashboard Guide")}</span><button class="keys-close" aria-label="${L("닫기", "Close")}">${icon(ICONS.X)}</button></div>
+    <p class="mod-p">${L("PC 데몬을 Cloudflare 터널로 연결해 휴대폰에서 상태 확인·승인·지시 전송을 할 수 있습니다.", "Connect your PC daemon via Cloudflare Tunnel to monitor status, approve prompts, and send tasks from your phone.")}</p>
+    <div class="mod-row"><code>${url}</code><button class="mod-copy">${L("주소 복사", "Copy URL")}</button></div>
     <ol class="mod-steps">
-      <li>터미널에서 <code>mygdeck-cli mobile on</code> 실행 (최초 1회는 <code>docs/mobile.md</code> 참고해 토큰 설정)</li>
-      <li>휴대폰 브라우저에서 위 주소를 열고 홈 화면에 추가(PWA)</li>
-      <li>종료할 때는 <code>mygdeck-cli mobile off</code></li>
+      <li>${L("터미널에서 <code>mygdeck-cli mobile on --url &lt;worker-url&gt;</code> 실행 (<code>docs/mobile.md</code> 참고)", "Run <code>mygdeck-cli mobile on --url &lt;worker-url&gt;</code> in your terminal (see <code>docs/mobile.md</code>)")}</li>
+      <li>${L("휴대폰 브라우저에서 위 주소를 열고 홈 화면에 추가(PWA)", "Open your Worker URL on mobile and Add to Home Screen (PWA)")}</li>
+      <li>${L("종료할 때는 <code>mygdeck-cli mobile off</code>", "Run <code>mygdeck-cli mobile off</code> to stop")}</li>
     </ol>`;
   box.querySelector(".keys-close").onclick = closeOverlay;
   box.querySelector(".mod-copy").onclick = async (e) => {
     await navigator.clipboard.writeText(url).catch(() => {});
-    e.target.textContent = "복사됨";
+    e.target.textContent = L("복사됨", "Copied");
   };
   overlay.replaceChildren(box);
 }
@@ -95,7 +96,7 @@ export function openFind(app) {
     bar = document.createElement("div");
     bar.id = "find-bar";
     bar.className = "find-bar";
-    bar.innerHTML = `<div class="find-row"><input class="find-in" placeholder="전체 대화 · 화면 검색…" spellcheck="false"><button class="find-prev" title="이전 (Shift+Enter)">▲</button><button class="find-next" title="다음 (Enter)">▼</button><button class="find-x" title="닫기 (Esc)">✕</button></div><div class="find-hits" hidden></div>`;
+    bar.innerHTML = `<div class="find-row"><input class="find-in" placeholder="${L("전체 대화 · 화면 검색…", "Find in chats & view…")}" spellcheck="false"><button class="find-prev" title="${L("이전 (Shift+Enter)", "Previous (Shift+Enter)")}">▲</button><button class="find-next" title="${L("다음 (Enter)", "Next (Enter)")}">▼</button><button class="find-x" title="${L("닫기 (Esc)", "Close (Esc)")}">✕</button></div><div class="find-hits" hidden></div>`;
     document.body.append(bar);
     const input = bar.querySelector(".find-in");
     const hitsBox = bar.querySelector(".find-hits");
@@ -125,7 +126,7 @@ export function openFind(app) {
       for (const h of hits.slice(0, 8)) {
         const b = document.createElement("button");
         b.className = "find-hit";
-        b.innerHTML = `<b>${h.c.name}</b><span>${h.cur ? "현재 턴" : `${h.ti + 1}턴`} · ${h.snippet.replace(/</g, "&lt;")}</span>`;
+        b.innerHTML = `<b>${h.c.name}</b><span>${h.cur ? L("현재 턴", "Current turn") : L(`${h.ti + 1}턴`, `Turn ${h.ti + 1}`)} · ${h.snippet.replace(/</g, "&lt;")}</span>`;
         b.onclick = () => {
           app.setActive(h.ci);
           const sel = h.cur ? ".s-ask.cur" : `.s-past[data-turn="${h.ti}"]`;
@@ -160,7 +161,7 @@ export function openCodeSearch(app, toggleOverlay, closeOverlay) {
   if (!c) return;
   const overlay = toggleOverlay("codesearch");
   if (!overlay) return;
-  overlay.innerHTML = `<div class="qo pal"><input class="qo-in" placeholder="${c.name} 코드 내 텍스트 검색…" spellcheck="false"><ul class="qo-list"></ul></div>`;
+  overlay.innerHTML = `<div class="qo pal"><input class="qo-in" placeholder="${L(`${c.name} 코드 내 텍스트 검색…`, `Search text in ${c.name}…`)}" spellcheck="false"><ul class="qo-list"></ul></div>`;
   const input = overlay.querySelector("input");
   const list = overlay.querySelector("ul");
   let hits = [];
@@ -214,7 +215,7 @@ export async function openDoctor(toggleOverlay) {
   if (!overlay) return;
   const box = document.createElement("div");
   box.className = "qo pal";
-  box.innerHTML = `<div class="qo-title">환경 진단 (Doctor)</div><div class="doc-list"><div class="muted">점검 중…</div></div>`;
+  box.innerHTML = `<div class="qo-title">${L("환경 진단 (Doctor)", "Environment Diagnostics (Doctor)")}</div><div class="doc-list"><div class="muted">${L("점검 중…", "Checking…")}</div></div>`;
   overlay.replaceChildren(box);
   const items = await invoke("doctor_check").catch(() => []);
   const list = box.querySelector(".doc-list");
@@ -235,26 +236,32 @@ export function openDeckSettings(ctx, toggleOverlay, closeOverlay) {
   box.className = "qo pal";
   const soundOn = localStorage.getItem("mygdeck-sound") !== "off";
   const ov = loadKeyOverrides();
-  box.innerHTML = `<div class="qo-title">통합 설정</div>
+  const langLabel = getLang() === "en" ? "English" : "한국어";
+  box.innerHTML = `<div class="qo-title">${L("통합 설정", "Settings")}</div>
     <div class="ds-grid">
-      <label><span>테마</span><button type="button" class="ds-theme">전환 (${document.documentElement.dataset.theme || "dark"})</button></label>
-      <label><span>글자 크기 (${ctx.getFontSize()}px)</span><span><button type="button" class="ds-fminus">-</button> <button type="button" class="ds-fplus">+</button></span></label>
-      <label><span>알림 효과음</span><button type="button" class="ds-sound">${soundOn ? "켜짐" : "꺼짐"}</button></label>
-      <label><span>커맨드 팔레트 단축키</span><button type="button" class="ds-remap" data-act="palette">${keyLabel(`Ctrl+${ov.palette || "K"}`)}</button></label>
-      <label><span>파일 빠른 열기 단축키</span><button type="button" class="ds-remap" data-act="quick">${keyLabel(`Ctrl+${ov.quick || "P"}`)}</button></label>
-      <label><span>전체 단축키 목록</span><button type="button" class="ds-keys">보기</button></label>
+      <label><span>${L("언어 (Language)", "Language")}</span><button type="button" class="ds-lang">${langLabel}</button></label>
+      <label><span>${L("테마", "Theme")}</span><button type="button" class="ds-theme">${L("전환", "Switch")} (${document.documentElement.dataset.theme || "dark"})</button></label>
+      <label><span>${L("글자 크기", "Font size")} (${ctx.getFontSize()}px)</span><span><button type="button" class="ds-fminus">-</button> <button type="button" class="ds-fplus">+</button></span></label>
+      <label><span>${L("알림 효과음", "Notification sound")}</span><button type="button" class="ds-sound">${soundOn ? L("켜짐", "On") : L("꺼짐", "Off")}</button></label>
+      <label><span>${L("커맨드 팔레트 단축키", "Command palette shortcut")}</span><button type="button" class="ds-remap" data-act="palette">${keyLabel(`Ctrl+${ov.palette || "K"}`)}</button></label>
+      <label><span>${L("파일 빠른 열기 단축키", "Quick open shortcut")}</span><button type="button" class="ds-remap" data-act="quick">${keyLabel(`Ctrl+${ov.quick || "P"}`)}</button></label>
+      <label><span>${L("전체 단축키 목록", "All shortcuts")}</span><button type="button" class="ds-keys">${L("보기", "View")}</button></label>
     </div>`;
-  box.querySelector(".ds-theme").onclick = (e) => { ctx.cycleTheme(); e.target.textContent = `전환 (${document.documentElement.dataset.theme || "dark"})`; };
-  box.querySelector(".ds-fminus").onclick = () => { ctx.applyFontSize(ctx.getFontSize() - 1); box.querySelector(".ds-fminus").closest("label").firstElementChild.textContent = `글자 크기 (${ctx.getFontSize()}px)`; };
-  box.querySelector(".ds-fplus").onclick = () => { ctx.applyFontSize(ctx.getFontSize() + 1); box.querySelector(".ds-fplus").closest("label").firstElementChild.textContent = `글자 크기 (${ctx.getFontSize()}px)`; };
+  box.querySelector(".ds-lang").onclick = () => {
+    setLang(getLang() === "en" ? "ko" : "en");
+    location.reload();
+  };
+  box.querySelector(".ds-theme").onclick = (e) => { ctx.cycleTheme(); e.target.textContent = `${L("전환", "Switch")} (${document.documentElement.dataset.theme || "dark"})`; };
+  box.querySelector(".ds-fminus").onclick = () => { ctx.applyFontSize(ctx.getFontSize() - 1); box.querySelector(".ds-fminus").closest("label").firstElementChild.textContent = `${L("글자 크기", "Font size")} (${ctx.getFontSize()}px)`; };
+  box.querySelector(".ds-fplus").onclick = () => { ctx.applyFontSize(ctx.getFontSize() + 1); box.querySelector(".ds-fplus").closest("label").firstElementChild.textContent = `${L("글자 크기", "Font size")} (${ctx.getFontSize()}px)`; };
   box.querySelector(".ds-sound").onclick = (e) => {
     const next = localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off";
     localStorage.setItem("mygdeck-sound", next);
-    e.target.textContent = next === "on" ? "켜짐" : "꺼짐";
+    e.target.textContent = next === "on" ? L("켜짐", "On") : L("꺼짐", "Off");
   };
   for (const rb of box.querySelectorAll(".ds-remap")) {
     rb.onclick = () => {
-      const ch = window.prompt("새 키 문자를 입력하세요 (A-Z, 기본값 복원은 빈칸):", "")?.trim().toUpperCase();
+      const ch = window.prompt(L("새 키 문자를 입력하세요 (A-Z, 기본값 복원은 빈칸):", "Enter new key letter (A-Z, empty to reset):"), "")?.trim().toUpperCase();
       if (ch === undefined) return;
       const cur = loadKeyOverrides();
       if (!ch) delete cur[rb.dataset.act];
@@ -271,28 +278,28 @@ export function openShortcuts(toggleOverlay, closeOverlay) {
   const overlay = toggleOverlay("shortcuts");
   if (!overlay) return;
   const items = [
-    ["Ctrl+K", "커맨드 팔레트 열기"],
-    ["Ctrl+F", "화면 내 텍스트 검색"],
-    ["Ctrl+Shift+F", "프로젝트 코드 내용 검색"],
-    ["Ctrl+Space", "다음 대기 프로젝트로 이동"],
-    ["Ctrl+0", "전체 보기 열기 / 닫기"],
-    ["Ctrl+1~9", "해당 번호 프로젝트로 이동"],
-    ["Ctrl+PgUp / PgDn", "이전 / 다음 프로젝트"],
-    ["Ctrl+'", "프로젝트 폴더 추가"],
-    ["Ctrl+P", "파일 빠른 열기"],
-    ["Ctrl+.", "CLI / GUI 화면 전환"],
-    ["Ctrl+`", "하단 터미널 열기 / 닫기"],
-    ["Ctrl+;", "탐색기 · 뷰어 열기 / 닫기"],
-    ["Ctrl+I", "선택한 코드 위치 입력창에 넣기"],
-    ["Ctrl++ / -", "카드 크기 조절"],
-    ["Ctrl+Tab", "카드 내 포커스 전환"],
-    ["Ctrl+Q", "실행 중인 에이전트 중단"],
-    ["Ctrl+F4", "현재 프로젝트 닫기"],
-    ["Esc", "팝업 닫기"],
+    ["Ctrl+K", L("커맨드 팔레트 열기", "Open command palette")],
+    ["Ctrl+F", L("화면 내 텍스트 검색", "Find in view")],
+    ["Ctrl+Shift+F", L("프로젝트 코드 내용 검색", "Search in project files")],
+    ["Ctrl+Space", L("다음 대기 프로젝트로 이동", "Jump to next waiting project")],
+    ["Ctrl+0", L("전체 보기 열기 / 닫기", "Toggle overview grid")],
+    ["Ctrl+1~9", L("해당 번호 프로젝트로 이동", "Switch to project #")],
+    ["Ctrl+PgUp / PgDn", L("이전 / 다음 프로젝트", "Previous / Next project")],
+    ["Ctrl+'", L("프로젝트 폴더 추가", "Add project folder")],
+    ["Ctrl+P", L("파일 빠른 열기", "Quick open file")],
+    ["Ctrl+.", L("CLI / GUI 화면 전환", "Toggle GUI / CLI view")],
+    ["Ctrl+`", L("하단 터미널 열기 / 닫기", "Toggle bottom shell")],
+    ["Ctrl+;", L("탐색기 · 뷰어 열기 / 닫기", "Toggle spec panel")],
+    ["Ctrl+I", L("선택한 코드 위치 입력창에 넣기", "Insert selection into composer")],
+    ["Ctrl++ / -", L("카드 크기 조절", "Adjust card density")],
+    ["Ctrl+Tab", L("카드 내 포커스 전환", "Cycle focus within card")],
+    ["Ctrl+Q", L("실행 중인 에이전트 중단", "Stop running agent")],
+    ["Ctrl+F4", L("현재 프로젝트 닫기", "Close current project")],
+    ["Esc", L("팝업 닫기", "Close overlay")],
   ];
   const box = document.createElement("div");
   box.className = "qo keys-box";
-  box.innerHTML = `<div class="keys-head"><span class="qo-title">키보드 단축키</span><button class="keys-close" aria-label="닫기">${icon(ICONS.X)}</button></div><div class="keys-grid"></div>`;
+  box.innerHTML = `<div class="keys-head"><span class="qo-title">${L("키보드 단축키", "Keyboard Shortcuts")}</span><button class="keys-close" aria-label="${L("닫기", "Close")}">${icon(ICONS.X)}</button></div><div class="keys-grid"></div>`;
   box.querySelector(".keys-close").onclick = closeOverlay;
   const grid = box.querySelector(".keys-grid");
   for (const [k, label] of items) {

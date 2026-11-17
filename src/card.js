@@ -8,29 +8,30 @@ import { Explorer } from "./explorer.js";
 import { Viewer } from "./viewer.js";
 import { Composer } from "./composer.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
+import { L } from "./i18n.js";
 import { MENU, keyLabel, ROTATE_AT, contextLimit, detectLocalhostUrl, menuChoices, menuQuestion, basename, handoffPrompt, hookStatus, isAgentNotice, pasteSequence, pickErrorLines, projectColor, promptWaiting, seedPrompt } from "./logic.js";
 import { elapsed, renderSummary, summaryLines } from "./summary.js";
 import { renderAgentPick, openAgentMenu, closeAgentMenu, onAgentPick, openWorktree, mergeWorktree, removeWorktree } from "./agent_menu.js";
 
-const TEMPLATE = `
+const TEMPLATE = () => `
 <div class="head">
-  <span class="dot"></span><span class="idx"></span><b class="name"></b><button type="button" class="agent" title="새 세션으로 이어가기 · 에이전트 바꾸기" aria-haspopup="menu" aria-expanded="false"></button>
-  <span class="badge"></span><span class="stext"></span><span class="b-conflict" hidden></span><button class="b-branch" title="현재 브랜치" hidden></button><button class="diff" title="마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기" hidden></button><button class="b-preview" title="감지된 로컬 서버 열기" hidden></button><button class="b-run" title="실행 또는 검증 명령 돌리기">${icon(ICONS.Play)}<span class="lbl">실행</span></button><button class="b-test" title="턴 종료 후 검증 결과" hidden></button><button class="ctx" title="컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프"></button>
-  <button class="b-perm" title="권한 승인 모드 전환 (확인 / 자동허용)"></button>
-  <button class="b-pin" title="카드 맨 앞에 고정">${icon(ICONS.Pin)}</button>
-  <button class="b-mute" title="알림 끄기/켜기"></button>
-  <button class="b-restart" title="다시 시작" hidden>${icon(ICONS.RotateCw)}<span class="lbl">다시 시작</span></button>
-  <button class="b-cli" title="CLI 화면 보기" hidden></button>
-  <button class="b-shell" title="터미널 열기/닫기">${icon(ICONS.PanelBottom)}<span class="lbl">터미널</span></button>
+  <span class="dot"></span><span class="idx"></span><b class="name"></b><button type="button" class="agent" title="${L("새 세션으로 이어가기 · 에이전트 바꾸기", "Handoff session · Switch agent")}" aria-haspopup="menu" aria-expanded="false"></button>
+  <span class="badge"></span><span class="stext"></span><span class="b-conflict" hidden></span><button class="b-branch" title="${L("현재 브랜치", "Current branch")}" hidden></button><button class="diff" title="${L("마지막 커밋 이후 바뀐 줄 · 클릭하면 바뀐 내용 보기", "Lines changed since last commit · Click to review")}" hidden></button><button class="b-preview" title="${L("감지된 로컬 서버 열기", "Open detected local server")}" hidden></button><button class="b-run" title="${L("실행 또는 검증 명령 돌리기", "Run or verify project")}">${icon(ICONS.Play)}<span class="lbl">${L("실행", "Run")}</span></button><button class="b-test" title="${L("턴 종료 후 검증 결과", "Post-turn verification")}" hidden></button><button class="ctx" title="${L("컨텍스트 사용량 · 클릭하면 새 대화로 핸드오프", "Context usage · Click to handoff")}"></button>
+  <button class="b-perm" title="${L("권한 승인 모드 전환 (확인 / 자동허용)", "Toggle permission mode (Confirm / Auto)")}"></button>
+  <button class="b-pin" title="${L("카드 맨 앞에 고정", "Pin card to front")}">${icon(ICONS.Pin)}</button>
+  <button class="b-mute" title="${L("알림 끄기/켜기", "Mute/unmute notifications")}"></button>
+  <button class="b-restart" title="${L("다시 시작", "Restart")}" hidden>${icon(ICONS.RotateCw)}<span class="lbl">${L("다시 시작", "Restart")}</span></button>
+  <button class="b-cli" title="${L("CLI 화면 보기", "View raw CLI")}" hidden></button>
+  <button class="b-shell" title="${L("터미널 열기/닫기", "Toggle shell")}">${icon(ICONS.PanelBottom)}<span class="lbl">${L("터미널", "Shell")}</span></button>
 </div>
-<div class="conn-banner" hidden><span>세션 연결이 끊어졌습니다.</span><button type="button" class="conn-retry">다시 연결</button></div>
+<div class="conn-banner" hidden><span>${L("세션 연결이 끊어졌습니다.", "Session disconnected.")}</span><button type="button" class="conn-retry">${L("다시 연결", "Reconnect")}</button></div>
 <div class="mods">
-  <details class="m-files"><summary>${icon(ICONS.FolderTree)}파일 <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
-  <details class="m-spec"><summary>${icon(ICONS.FileText)}스펙 <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
-  <details class="m-note"><summary>메모</summary><textarea class="note-ta" rows="4" placeholder="이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…"></textarea></details>
+  <details class="m-files"><summary>${icon(ICONS.FolderTree)}${L("파일", "Files")} <span class="cnt"></span> <span class="kbd">${keyLabel("Ctrl+P")}</span></summary><div class="explorer"></div></details>
+  <details class="m-spec"><summary>${icon(ICONS.FileText)}${L("스펙", "Spec")} <span class="spec-name"></span> <span class="kbd">${keyLabel("Ctrl+;")}</span></summary><div class="spec md"></div></details>
+  <details class="m-note"><summary>${L("메모", "Notes")}</summary><textarea class="note-ta" rows="4" placeholder="${L("이 프로젝트 로컬 메모 (에이전트에게 전달되지 않음)…", "Local project notes (never sent to the agent)…")}"></textarea></details>
 </div>
 <div class="body"><div class="term"></div><div class="summary" tabindex="0" hidden></div><div class="viewer" hidden></div></div>
-<div class="shell" hidden><div class="shell-grip" title="드래그로 높이 조절"></div><div class="shell-bar"><button class="shell-fix" title="오류 출력만 추려서 에이전트에게 수정 요청">오류 고치기</button><button class="shell-send" title="최근 터미널 출력을 에이전트 입력창으로 보내기">최근 출력 보내기</button><button class="shell-clear" title="터미널 화면 지우기">지우기</button><button class="shell-new" title="현재 터미널을 종료하고 새 셸로 다시 열기">새로 열기</button><span class="shell-scripts"></span></div></div>
+<div class="shell" hidden><div class="shell-grip" title="${L("드래그로 높이 조절", "Drag to resize")}"></div><div class="shell-bar"><button class="shell-fix" title="${L("오류 출력만 추려서 에이전트에게 수정 요청", "Extract error lines and ask agent to fix")}">${L("오류 고치기", "Fix error")}</button><button class="shell-send" title="${L("최근 터미널 출력을 에이전트 입력창으로 보내기", "Send recent shell output to composer")}">${L("최근 출력 보내기", "Send output")}</button><button class="shell-clear" title="${L("터미널 화면 지우기", "Clear terminal")}">${L("지우기", "Clear")}</button><button class="shell-new" title="${L("현재 터미널을 종료하고 새 셸로 다시 열기", "Restart shell")}">${L("새로 열기", "New shell")}</button><span class="shell-scripts"></span></div></div>
 <div class="qa" hidden></div>
 <pre class="peek"></pre>
 <div class="composer"></div>
@@ -61,7 +62,7 @@ export class Card {
     this.el = document.createElement("section");
     this.el.className = "card";
     this.el.style.setProperty("--pc", this.color);
-    this.el.innerHTML = TEMPLATE;
+    this.el.innerHTML = TEMPLATE();
     this.$ = (sel) => this.el.querySelector(sel);
     this.$(".name").textContent = this.name;
     this.$(".name").title = this.root;
@@ -134,7 +135,7 @@ export class Card {
       if (t) t.textContent = elapsed(this.turnStart);
     }, 1000);
     this.setDensity("full");
-    this.setStatus("starting", "시작 중");
+    this.setStatus("starting", L("시작 중", "Starting"));
   }
 
   launchCommand(resume = false) {
@@ -269,10 +270,10 @@ export class Card {
   syncPerm() {
     if (!this.permBtn) return;
     this.permBtn.classList.toggle("auto", this.autoApprove);
-    this.permBtn.textContent = this.autoApprove ? "자동허용" : "확인";
+    this.permBtn.textContent = this.autoApprove ? L("자동허용", "Auto") : L("확인", "Confirm");
     this.permBtn.title = this.autoApprove
-      ? "권한 요청을 자동으로 허용합니다 · 클릭하면 수동 확인으로 전환"
-      : "권한 요청마다 확인합니다 · 클릭하면 자동허용으로 전환";
+      ? L("권한 요청을 자동으로 허용합니다 · 클릭하면 수동 확인으로 전환", "Auto-approving permissions · Click for manual confirmation")
+      : L("권한 요청마다 확인합니다 · 클릭하면 자동허용으로 전환", "Confirming permissions manually · Click for auto-approve");
   }
 
   toggleAutoApprove() {
@@ -300,7 +301,7 @@ export class Card {
     if (b) {
       b.hidden = !this.conflicts.size;
       if (this.conflicts.size) {
-        b.textContent = `충돌 주의 ${this.conflicts.size}`;
+        b.textContent = L(`충돌 주의 ${this.conflicts.size}`, `Overlap ${this.conflicts.size}`);
         b.title = [...this.conflicts.entries()]
           .slice(0, 6)
           .map(([f, others]) => `${f} (${others.join(", ")})`)
@@ -338,12 +339,12 @@ export class Card {
     // One header button toggles both ways; only hook agents have a GUI view.
     const btn = this.$(".b-cli");
     btn.hidden = !this.hooks;
-    btn.innerHTML = this.view === "cli" ? `${icon(ICONS.LayoutList)}<span class="lbl">GUI 보기</span>` : `${icon(ICONS.SquareTerminal)}<span class="lbl">CLI 보기</span>`;
-    btn.title = this.view === "cli" ? "GUI 화면으로 돌아가기" : "CLI 화면 보기";
+    btn.innerHTML = this.view === "cli" ? `${icon(ICONS.LayoutList)}<span class="lbl">${L("GUI 보기", "GUI")}</span>` : `${icon(ICONS.SquareTerminal)}<span class="lbl">${L("CLI 보기", "CLI")}</span>`;
+    btn.title = this.view === "cli" ? L("GUI 화면으로 돌아가기", "Switch to GUI view") : L("CLI 화면 보기", "Switch to CLI view");
     if (this.adapter && !this.adapter.detected && (loading || this.status === "exited")) {
-      box.innerHTML = `<div class="s-diag"><b>${this.adapter.name} CLI를 찾을 수 없습니다</b><p>실행 명령(<code>${this.adapter.launch}</code>)이 PATH에 설치되어 있는지 확인하거나, 아래 에이전트 선택에서 설치된 다른 에이전트로 바꾸세요.</p></div>`;
+      box.innerHTML = `<div class="s-diag"><b>${L(`${this.adapter.name} CLI를 찾을 수 없습니다`, `${this.adapter.name} CLI not found`)}</b><p>${L(`실행 명령(<code>${this.adapter.launch}</code>)이 PATH에 설치되어 있는지 확인하거나, 아래 에이전트 선택에서 설치된 다른 에이전트로 바꾸세요.`, `Check that <code>${this.adapter.launch}</code> is in your PATH, or switch to another agent below.`)}</p></div>`;
     } else if (loading) {
-      box.innerHTML = `<div class="s-loading">로딩 중…</div>`;
+      box.innerHTML = `<div class="s-loading">${L("로딩 중…", "Loading…")}</div>`;
     } else if (show) {
       renderSummary(this, box);
     }
@@ -382,7 +383,7 @@ export class Card {
   }
 
   setFileCount(n) {
-    this.$(".cnt").textContent = n ? `· ${n}개 변경` : "";
+    this.$(".cnt").textContent = n ? L(`· ${n}개 변경`, `· ${n} changed`) : "";
     this.refreshDiff(n);
     this.app.updateConflicts?.();
   }

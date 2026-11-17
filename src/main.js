@@ -13,6 +13,7 @@ import { openConnections, refreshPool } from "./connections.js";
 import { ptys, setTermFontSize, setTermTheme } from "./pty.js";
 import { exportMarkdown } from "./summary.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
+import { L, applyStaticI18n } from "./i18n.js";
 import { DENSITIES, autoLayout, findFileConflicts, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
 import {
   loadKeyOverrides,
@@ -159,7 +160,7 @@ function reflowLights() {
 window.addEventListener("resize", reflowLights);
 
 // Theme: dark (default) or light. A per-machine preference, kept in the window's storage.
-const THEMES = { dark: ["다크", ICONS.Moon], light: ["밝게", ICONS.Sun] };
+const THEMES = { dark: [L("다크", "Dark"), ICONS.Moon], light: [L("밝게", "Light"), ICONS.Sun] };
 let themePref = (() => {
   try {
     return THEMES[localStorage.getItem("mygdeck.theme")] ? localStorage.getItem("mygdeck.theme") : "dark";
@@ -178,7 +179,7 @@ function applyTheme() {
   const order = Object.keys(THEMES);
   const next = order[(order.indexOf(themePref) + 1) % order.length];
   btn.innerHTML = icon(THEMES[themePref][1]);
-  btn.title = `테마: ${THEMES[themePref][0]} · 누르면 ${THEMES[next][0]}`;
+  btn.title = L(`테마: ${THEMES[themePref][0]} · 누르면 ${THEMES[next][0]}`, `Theme: ${THEMES[themePref][0]} · Click for ${THEMES[next][0]}`);
 }
 applyTheme();
 
@@ -192,6 +193,7 @@ function cycleTheme() {
 }
 
 async function boot() {
+  applyStaticI18n();
   $("theme-btn").onclick = cycleTheme;
   applyFontSize(Number(localStorage.getItem("mygdeck-font-size") || 14));
   const addBtn = document.getElementById("add-btn");
@@ -301,14 +303,14 @@ async function onStatus(card, prev) {
   win.requestUserAttention(card.status === "waiting" ? UserAttentionType.Critical : UserAttentionType.Informational).catch(() => {});
   notifyAllowed ??= (await isPermissionGranted().catch(() => false)) || (await requestPermission().catch(() => "denied")) === "granted";
   if (!notifyAllowed) return;
-  const what = card.status === "waiting" ? card.statusText || "입력을 기다립니다" : `완료${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`;
+  const what = card.status === "waiting" ? card.statusText || L("입력을 기다립니다", "Waiting for input") : L(`완료${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`, `Done${card.turnAsk ? `: ${card.turnAsk.slice(0, 80)}` : ""}`);
   sendNotification({ title: `MYG Deck · ${card.name}`, body: what });
 }
 
 async function onTestFail(card, res) {
   if (card.cfg?.muted || document.hasFocus()) return;
   notifyAllowed ??= (await isPermissionGranted().catch(() => false)) || (await requestPermission().catch(() => "denied")) === "granted";
-  if (notifyAllowed) sendNotification({ title: `MYG Deck · ${card.name} 검증 실패`, body: `종료 코드 ${res.code}: ${card.cfg.post_turn_cmd}` });
+  if (notifyAllowed) sendNotification({ title: L(`MYG Deck · ${card.name} 검증 실패`, `MYG Deck · ${card.name} check failed`), body: L(`종료 코드 ${res.code}: ${card.cfg.post_turn_cmd}`, `Exit code ${res.code}: ${card.cfg.post_turn_cmd}`) });
 }
 
 window.addEventListener("focus", () => {
@@ -370,7 +372,7 @@ function dragToSwap(card) {
 }
 
 async function addProject() {
-  const dir = await openDialog({ directory: true, title: "프로젝트 폴더 선택", defaultPath: "C:\\Project" }).catch(() => null);
+  const dir = await openDialog({ directory: true, title: L("프로젝트 폴더 선택", "Select project folder") }).catch(() => null);
   if (typeof dir === "string") openProject(dir);
 }
 
@@ -385,7 +387,7 @@ function openProject(dir) {
 
 async function closeCard(card) {
   const busy = card.status === "working" || card.status === "waiting";
-  if (busy && !(await ask(`${card.name}: 에이전트가 작업 중입니다. 닫으면 작업이 중단됩니다.`, { title: "프로젝트 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "취소" }))) return;
+  if (busy && !(await ask(L(`${card.name}: 에이전트가 작업 중입니다. 닫으면 작업이 중단됩니다.`, `${card.name}: Agent is busy. Closing will stop it.`), { title: L("프로젝트 닫기", "Close project"), kind: "warning", okLabel: L("닫기", "Close"), cancelLabel: L("취소", "Cancel") }))) return;
   if (!calm.matches) {
     await card.el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(0.96)" }], { duration: 220, easing: "ease-in", fill: "forwards" }).finished.catch(() => {});
   }
@@ -459,7 +461,7 @@ function renderStrip() {
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
     b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel("닫기 (Ctrl+F4)")}">${icon(ICONS.X)}</span>`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel(L("닫기 (Ctrl+F4)", "Close (Ctrl+F4)"))}">${icon(ICONS.X)}</span>`;
     b.querySelector(".cn").textContent = c.name;
     b.onclick = (e) => (e.target.closest(".cx") ? closeCard(c) : setActive(i));
     b.draggable = true;
@@ -505,7 +507,7 @@ function renderOverview() {
   overlay.classList.toggle("still", !first);
   if (first) {
     ovFilter = "";
-    overlay.innerHTML = `<div class="ov"><div class="ov-head"><div class="ov-title">전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기</div><input class="ov-filter" placeholder="프로젝트 이름 필터…" spellcheck="false"></div><div class="ov-grid"></div></div>`;
+    overlay.innerHTML = `<div class="ov"><div class="ov-head"><div class="ov-title">${L("전체 보기 · 방향키 이동 · Enter 열기 · Esc 닫기", "Overview · Arrows to move · Enter to open · Esc to close")}</div><input class="ov-filter" placeholder="${L("프로젝트 이름 필터…", "Filter projects…")}" spellcheck="false"></div><div class="ov-grid"></div></div>`;
     const fin = overlay.querySelector(".ov-filter");
     fin.oninput = () => { ovFilter = fin.value.trim().toLowerCase(); renderOverview(); };
     fin.focus();
@@ -523,7 +525,7 @@ function renderOverview() {
     t.querySelector("b").textContent = `#${i + 1} ${c.name}`;
     if (c.cfg.pinned) t.querySelector(".th").insertAdjacentHTML("afterbegin", icon(ICONS.Pin, "tile-pin"));
     t.querySelector(".cb").innerHTML = statusIcon(c.status);
-    const statText = c.stats?.turns ? ` · ${c.stats.turns}턴 (${Math.max(1, Math.round(c.stats.totalMs / 60000))}분)` : "";
+    const statText = c.stats?.turns ? L(` · ${c.stats.turns}턴 (${Math.max(1, Math.round(c.stats.totalMs / 60000))}분)`, ` · ${c.stats.turns} turns (${Math.max(1, Math.round(c.stats.totalMs / 60000))}m)`) : "";
     t.querySelector(".tt").textContent = `${c.statusText}${statText}`;
     t.querySelector(".tp").textContent = c.peek.join("\n");
     t.onclick = () => {
@@ -540,8 +542,8 @@ async function quickOpen() {
   if (!c) return;
   overlayKind = "quick";
   overlay.hidden = false;
-  overlay.innerHTML = `<div class="qo"><div class="qo-title"></div><input class="qo-in" placeholder="파일 이름 일부 입력" spellcheck="false"><ul class="qo-list"></ul></div>`;
-  overlay.querySelector(".qo-title").textContent = `${c.name} · 파일 열기`;
+  overlay.innerHTML = `<div class="qo"><div class="qo-title"></div><input class="qo-in" placeholder="${L("파일 이름 일부 입력", "Type part of a file name")}" spellcheck="false"><ul class="qo-list"></ul></div>`;
+  overlay.querySelector(".qo-title").textContent = `${c.name} · ${L("파일 열기", "Open file")}`;
   const input = overlay.querySelector("input");
   const ul = overlay.querySelector("ul");
   input.focus();
@@ -595,7 +597,7 @@ function renderEmptyExtra() {
   if (recent.length) {
     const sec = document.createElement("div");
     sec.className = "empty-sec";
-    sec.innerHTML = `<span class="empty-lbl">최근 프로젝트</span>`;
+    sec.innerHTML = `<span class="empty-lbl">${L("최근 프로젝트", "Recent projects")}</span>`;
     const row = document.createElement("div");
     row.className = "empty-pills";
     for (const p of recent) {
@@ -611,7 +613,7 @@ function renderEmptyExtra() {
   if (app.adapters?.length) {
     const sec = document.createElement("div");
     sec.className = "empty-sec";
-    sec.innerHTML = `<span class="empty-lbl">감지된 에이전트</span>`;
+    sec.innerHTML = `<span class="empty-lbl">${L("감지된 에이전트", "Detected agents")}</span>`;
     const row = document.createElement("div");
     row.className = "empty-pills";
     for (const a of app.adapters) {
@@ -641,7 +643,7 @@ function loadPresets() {
 
 function saveWorkspacePreset() {
   if (!app.cards.length) return;
-  const name = window.prompt("저장할 워크스페이스 이름 (예: 회사, 사이드):");
+  const name = window.prompt(L("저장할 워크스페이스 이름 (예: 회사, 사이드):", "Workspace name to save (e.g. work, side):"));
   if (!name?.trim()) return;
   const all = loadPresets();
   all[name.trim()] = app.cards.map((c) => ({ ...c.cfg }));
@@ -671,48 +673,48 @@ function openPalette() {
   overlay.hidden = false;
   const c = app.cards[app.active];
   const actions = [
-    ...app.cards.map((card, idx) => ({ label: `프로젝트 이동: ${card.name}`, hint: `#${idx + 1}`, run: () => setActive(idx) })),
-    { label: "프로젝트 폴더 추가", hint: keyLabel("Ctrl+'"), run: addProject },
-    { label: "여러 프로젝트에 동시 지시 (브로드캐스트)", hint: "비교 실행", run: openBroadcast },
+    ...app.cards.map((card, idx) => ({ label: L(`프로젝트 이동: ${card.name}`, `Switch project: ${card.name}`), hint: `#${idx + 1}`, run: () => setActive(idx) })),
+    { label: L("프로젝트 폴더 추가", "Add project folder"), hint: keyLabel("Ctrl+'"), run: addProject },
+    { label: L("여러 프로젝트에 동시 지시 (브로드캐스트)", "Broadcast prompt to multiple projects"), hint: L("비교 실행", "Broadcast"), run: openBroadcast },
     ...(c ? [
-      { label: `${c.name}: 파일 빠른 열기`, hint: keyLabel("Ctrl+P"), run: quickOpen },
-      { label: `${c.name}: 프로젝트 코드 내용 검색`, hint: keyLabel("Ctrl+Shift+F"), run: openCodeSearch },
-      { label: `${c.name}: 화면 내 텍스트 검색`, hint: keyLabel("Ctrl+F"), run: openFind },
-      { label: `${c.name}: 스펙 패널 열기/닫기`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
-      { label: `${c.name}: 하단 터미널 열기/닫기`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
-      { label: `${c.name}: GUI / CLI 화면 전환`, hint: keyLabel("Ctrl+."), run: () => c.toggleView() },
-      { label: `${c.name}: 대화 내용 마크다운 복사`, hint: "내보내기", run: () => navigator.clipboard.writeText(exportMarkdown(c)).catch(() => {}) },
-      { label: `${c.name}: 이전 턴 상태로 되돌리기 (체크포인트)`, hint: c.turnCheckpoint ? "복원 가능" : "없음", run: () => c.restoreCheckpoint() },
-      { label: `${c.name}: 수동 세션 핸드오프 (progress.md → 새 대화)`, hint: "컨텍스트", run: () => c.manualHandoff() },
-      { label: `${c.name}: worktree로 하나 더 열기`, hint: "병렬", run: () => c.openWorktree() },
-      { label: `${c.name}: 프로젝트 자동화 · 알림 설정`, hint: c.cfg.muted ? "음소거됨" : "훅/검증", run: () => openProjectSettings(c) },
-      { label: `${c.name}: 권한 승인 모드 전환 (${c.autoApprove ? "자동허용 → 확인" : "확인 → 자동허용"})`, hint: c.autoApprove ? "자동허용" : "확인", run: () => c.toggleAutoApprove() },
-      ...(c.viewer.comments.length ? [{ label: `${c.name}: 작성한 리뷰 코멘트 ${c.viewer.comments.length}건 입력창에 넣기`, hint: "리뷰", run: () => c.viewer.sendReviewComments() }] : []),
-      ...(c.shell ? [{ label: `${c.name}: 하단 터미널 오류 추출 → 에이전트에 요청`, hint: "오류 고치기", run: () => c.fixShellError() }] : []),
-      { label: `${c.name}: 알림 ${c.cfg.muted ? "켜기" : "음소거"}`, hint: "알림", run: () => { c.cfg.muted = !c.cfg.muted; save(); } },
+      { label: `${c.name}: ${L("파일 빠른 열기", "Quick open file")}`, hint: keyLabel("Ctrl+P"), run: quickOpen },
+      { label: `${c.name}: ${L("프로젝트 코드 내용 검색", "Search in project files")}`, hint: keyLabel("Ctrl+Shift+F"), run: openCodeSearch },
+      { label: `${c.name}: ${L("화면 내 텍스트 검색", "Find in view")}`, hint: keyLabel("Ctrl+F"), run: openFind },
+      { label: `${c.name}: ${L("스펙 패널 열기/닫기", "Toggle spec panel")}`, hint: keyLabel("Ctrl+;"), run: () => c.toggleSpec() },
+      { label: `${c.name}: ${L("하단 터미널 열기/닫기", "Toggle bottom shell")}`, hint: keyLabel("Ctrl+`"), run: () => c.toggleShell() },
+      { label: `${c.name}: ${L("GUI / CLI 화면 전환", "Toggle GUI / CLI view")}`, hint: keyLabel("Ctrl+."), run: () => c.toggleView() },
+      { label: `${c.name}: ${L("대화 내용 마크다운 복사", "Copy conversation as Markdown")}`, hint: L("내보내기", "Export"), run: () => navigator.clipboard.writeText(exportMarkdown(c)).catch(() => {}) },
+      { label: `${c.name}: ${L("이전 턴 상태로 되돌리기 (체크포인트)", "Restore previous turn checkpoint")}`, hint: c.turnCheckpoint ? L("복원 가능", "Available") : L("없음", "None"), run: () => c.restoreCheckpoint() },
+      { label: `${c.name}: ${L("수동 세션 핸드오프 (progress.md → 새 대화)", "Manual session handoff (progress.md → fresh session)")}`, hint: L("컨텍스트", "Context"), run: () => c.manualHandoff() },
+      { label: `${c.name}: ${L("worktree로 하나 더 열기", "Open another copy in git worktree")}`, hint: L("병렬", "Parallel"), run: () => c.openWorktree() },
+      { label: `${c.name}: ${L("프로젝트 자동화 · 알림 설정", "Project automation & notifications")}`, hint: c.cfg.muted ? L("음소거됨", "Muted") : L("훅/검증", "Hooks/Verify"), run: () => openProjectSettings(c) },
+      { label: `${c.name}: ${L(`권한 승인 모드 전환 (${c.autoApprove ? "자동허용 → 확인" : "확인 → 자동허용"})`, `Permission mode (${c.autoApprove ? "Auto → Confirm" : "Confirm → Auto"})`)}`, hint: c.autoApprove ? L("자동허용", "Auto") : L("확인", "Confirm"), run: () => c.toggleAutoApprove() },
+      ...(c.viewer.comments.length ? [{ label: `${c.name}: ${L(`작성한 리뷰 코멘트 ${c.viewer.comments.length}건 입력창에 넣기`, `Insert ${c.viewer.comments.length} review comment(s)`)}`, hint: L("리뷰", "Review"), run: () => c.viewer.sendReviewComments() }] : []),
+      ...(c.shell ? [{ label: `${c.name}: ${L("하단 터미널 오류 추출 → 에이전트에 요청", "Extract shell error → ask agent")}`, hint: L("오류 고치기", "Fix error"), run: () => c.fixShellError() }] : []),
+      { label: `${c.name}: ${L(`알림 ${c.cfg.muted ? "켜기" : "음소거"}`, `${c.cfg.muted ? "Unmute" : "Mute"} notifications`)}`, hint: L("알림", "Alerts"), run: () => { c.cfg.muted = !c.cfg.muted; save(); } },
     ] : []),
     ...loadRecent()
       .filter((p) => !app.cards.some((card) => card.root.replace(/[\\/]+$/, "").toLowerCase() === p.replace(/[\\/]+$/, "").toLowerCase()))
-      .map((p) => ({ label: `최근 닫은 프로젝트 열기: ${p.split(/[\\/]/).pop()}`, hint: p, run: () => openProject(p) })),
+      .map((p) => ({ label: `${L("최근 닫은 프로젝트 열기", "Reopen recent project")}: ${p.split(/[\\/]/).pop()}`, hint: p, run: () => openProject(p) })),
     ...Object.entries(loadPresets()).map(([name, list]) => ({
-      label: `워크스페이스 전환: ${name}`,
-      hint: `${list.length}개 프로젝트`,
+      label: `${L("워크스페이스 전환", "Switch workspace")}: ${name}`,
+      hint: L(`${list.length}개 프로젝트`, `${list.length} projects`),
       run: () => switchWorkspacePreset(name),
     })),
-    { label: "워크스페이스: 현재 프로젝트 묶음 저장…", hint: `${app.cards.length}개`, run: saveWorkspacePreset },
-    { label: "전체 보기", hint: keyLabel("Ctrl+0"), run: toggleOverview },
-    { label: "글자 크기 크게 (+1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize + 1) },
-    { label: "글자 크기 작게 (-1px)", hint: `${fontSize}px`, run: () => applyFontSize(fontSize - 1) },
-    { label: "글자 크기 기본 (14px)", hint: "초기화", run: () => applyFontSize(14) },
-    { label: "모바일 대시보드 연결 안내", hint: "원격", run: openMobileGuide },
-    { label: "AI 연결 설정", hint: "모델", run: () => $("conn-btn").click() },
-    { label: "환경 진단 (CLI · Git · 도구 점검)", hint: "Doctor", run: openDoctor },
-    { label: "통합 설정 (테마 · 글자 · 알림)", hint: "설정", run: openDeckSettings },
-    { label: "테마 바꾸기 (다크 / 밝게 / 시스템)", hint: "테마", run: cycleTheme },
-    { label: `알림 효과음 ${localStorage.getItem("mygdeck-sound") === "off" ? "켜기" : "끄기"}`, hint: "오디오", run: () => localStorage.setItem("mygdeck-sound", localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off") },
-    { label: "키보드 단축키 보기", hint: "도움말", run: openShortcuts },
+    { label: L("워크스페이스: 현재 프로젝트 묶음 저장…", "Workspace: Save current projects…"), hint: L(`${app.cards.length}개`, `${app.cards.length}`), run: saveWorkspacePreset },
+    { label: L("전체 보기", "Overview"), hint: keyLabel("Ctrl+0"), run: toggleOverview },
+    { label: L("글자 크기 크게 (+1px)", "Increase font size (+1px)"), hint: `${fontSize}px`, run: () => applyFontSize(fontSize + 1) },
+    { label: L("글자 크기 작게 (-1px)", "Decrease font size (-1px)"), hint: `${fontSize}px`, run: () => applyFontSize(fontSize - 1) },
+    { label: L("글자 크기 기본 (14px)", "Reset font size (14px)"), hint: L("초기화", "Reset"), run: () => applyFontSize(14) },
+    { label: L("모바일 대시보드 연결 안내", "Mobile dashboard guide"), hint: L("원격", "Remote"), run: openMobileGuide },
+    { label: L("AI 연결 설정", "AI connections"), hint: L("모델", "Models"), run: () => $("conn-btn").click() },
+    { label: L("환경 진단 (CLI · Git · 도구 점검)", "Environment diagnostics (Doctor)"), hint: "Doctor", run: openDoctor },
+    { label: L("통합 설정 (테마 · 글자 · 언어 · 알림)", "Settings (Theme · Font · Language · Alerts)"), hint: L("설정", "Settings"), run: openDeckSettings },
+    { label: L("테마 바꾸기 (다크 / 밝게)", "Switch theme (Dark / Light)"), hint: L("테마", "Theme"), run: cycleTheme },
+    { label: L(`알림 효과음 ${localStorage.getItem("mygdeck-sound") === "off" ? "켜기" : "끄기"}`, `${localStorage.getItem("mygdeck-sound") === "off" ? "Enable" : "Disable"} notification sound`), hint: L("오디오", "Audio"), run: () => localStorage.setItem("mygdeck-sound", localStorage.getItem("mygdeck-sound") === "off" ? "on" : "off") },
+    { label: L("키보드 단축키 보기", "Keyboard shortcuts"), hint: L("도움말", "Help"), run: openShortcuts },
   ];
-  overlay.innerHTML = `<div class="qo pal"><div class="qo-title">커맨드 팔레트 · ${keyLabel("Ctrl+K")}</div><input class="qo-in" placeholder="실행할 명령이나 프로젝트 이름 입력…" spellcheck="false"><ul class="qo-list"></ul></div>`;
+  overlay.innerHTML = `<div class="qo pal"><div class="qo-title">${L("커맨드 팔레트", "Command Palette")} · ${keyLabel("Ctrl+K")}</div><input class="qo-in" placeholder="${L("실행할 명령이나 프로젝트 이름 입력…", "Type a command or project name…")}" spellcheck="false"><ul class="qo-list"></ul></div>`;
   const input = overlay.querySelector("input");
   const ul = overlay.querySelector("ul");
   let matches = actions;

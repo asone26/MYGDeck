@@ -3,6 +3,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { poolReady } from "./connections.js";
 import { DEFAULT_SNIPPETS, ROUTE_CHIP, fuzzyFilter, keyLabel, mentionFor, mentionToken, nextRoute, routeInput } from "./logic.js";
 import { ICONS, icon } from "./icons.js";
+import { L } from "./i18n.js";
 
 const SNIP_KEY = "mygdeck.snippets";
 const DRAFT_KEY = "mygdeck.drafts";
@@ -20,11 +21,11 @@ export class Composer {
     const a = card.adapter;
     // One box: pasted-image previews on top, then [model][effort] input [save] [send].
     el.innerHTML = `<div class="cbox"><div class="thumbs"></div>
-      <select class="model" title="모델 선택"></select><select class="effort" title="Effort 선택"></select>
+      <select class="model" title="${L("모델 선택", "Select model")}"></select><select class="effort" title="${L("Effort 선택", "Select effort")}"></select>
       <textarea rows="1" spellcheck="false"></textarea>
-      <button class="c-snip" title="현재 입력을 / 프롬프트로 저장" hidden>★</button>
-      <button class="send" title="보내기 (Enter)" aria-label="보내기" disabled>${icon(ICONS.ArrowUp)}</button><ul class="slash" hidden></ul></div>
-      <span class="route" hidden></span><button class="queue" hidden></button><div class="q-pop" hidden></div><button class="stop" title="${keyLabel("작업 중지 (Ctrl+Q)")}" hidden>${icon(ICONS.Square)}<span class="lbl">중지</span></button>`;
+      <button class="c-snip" title="${L("현재 입력을 / 프롬프트로 저장", "Save input as / snippet")}" hidden>★</button>
+      <button class="send" title="${L("보내기 (Enter)", "Send (Enter)")}" aria-label="${L("보내기", "Send")}" disabled>${icon(ICONS.ArrowUp)}</button><ul class="slash" hidden></ul></div>
+      <span class="route" hidden></span><button class="queue" hidden></button><div class="q-pop" hidden></div><button class="stop" title="${keyLabel(L("작업 중지 (Ctrl+Q)", "Stop agent (Ctrl+Q)"))}" hidden>${icon(ICONS.Square)}<span class="lbl">${L("중지", "Stop")}</span></button>`;
     this.queueBtn = el.querySelector(".queue");
     this.queuePop = el.querySelector(".q-pop");
     this.queueBtn.onclick = () => {
@@ -39,8 +40,8 @@ export class Composer {
     this.sendBtn = el.querySelector(".send");
     this.sendBtn.onclick = () => this.send();
     this.ta = el.querySelector("textarea");
-    this.ta.placeholder = `무엇을 할까요?`;
-    this.ta.title = keyLabel("Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)");
+    this.ta.placeholder = L("무엇을 할까요?", "What should the agent do?");
+    this.ta.title = keyLabel(L("Enter 전송 · Shift+Enter 줄바꿈 · / 명령 목록 · 파일을 끌어다 놓으면 @파일 · 이미지 붙여넣기(Ctrl+V)", "Enter to send · Shift+Enter newline · / commands · Drop files for @file · Paste image (Ctrl+V)"));
     this.slash = el.querySelector(".slash");
     this.thumbs = el.querySelector(".thumbs");
     this.sel = 0;
@@ -58,7 +59,7 @@ export class Composer {
 
     const select = el.querySelector(".model");
     if (a?.model_cmd && a.models.length) {
-      select.append(new Option("모델", ""), ...a.models.map((m) => new Option(m, m)));
+      select.append(new Option(L("모델", "Model"), ""), ...a.models.map((m) => new Option(m, m)));
       select.value = (card.cfg.model && a.models.includes(card.cfg.model))
         ? card.cfg.model
         : (a.base_model && a.models.includes(a.base_model) ? a.base_model : a.models[0]);

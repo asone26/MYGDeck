@@ -2,24 +2,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { fuzzyFilter, mentionFor } from "./logic.js";
 import { poolReady } from "./connections.js";
+import { L } from "./i18n.js";
 
 /** File explorer: files changed in this project (default) or the whole tree (spec 3.2 ①). */
 export class Explorer {
   constructor(card, el) {
     Object.assign(this, { card, el, mode: "changed", status: new Map(), staged: new Set(), excluded: new Set(), turnOnly: false, turnFiles: null, filterQuery: "" });
-    el.innerHTML = `<div class="xbar"><button data-m="changed" class="on">변경된 파일</button><button data-m="all">전체</button>
-      <button data-m="log" title="최근 커밋 기록 보기">기록</button>
-      <button class="x-turn" title="이번 턴에서 바뀐 파일만 보기" hidden>이번 턴</button>
-      <button class="x-all" title="변경된 모든 파일을 한 화면에서 비교" hidden>전체 비교</button>
-      <button class="x-ai" title="AI로 변경사항 3줄 요약 및 주의할 점 점검" hidden>AI 요약</button>
+    el.innerHTML = `<div class="xbar"><button data-m="changed" class="on">${L("변경된 파일", "Changed")}</button><button data-m="all">${L("전체", "All")}</button>
+      <button data-m="log" title="${L("최근 커밋 기록 보기", "Recent commits")}">${L("기록", "History")}</button>
+      <button class="x-turn" title="${L("이번 턴에서 바뀐 파일만 보기", "Files changed in this turn")}" hidden>${L("이번 턴", "This turn")}</button>
+      <button class="x-all" title="${L("변경된 모든 파일을 한 화면에서 비교", "Compare all changed files")}" hidden>${L("전체 비교", "Diff all")}</button>
+      <button class="x-ai" title="${L("AI로 변경사항 3줄 요약 및 주의할 점 점검", "AI summary of changes")}" hidden>${L("AI 요약", "AI summary")}</button>
       <span class="sp"></span>
-      <select class="x-branches" title="브랜치 전환 또는 새 브랜치 만들기" hidden></select>
-      <button class="x-stash" title="변경사항 임시 보관 (git stash)" hidden>보관</button>
-      <button class="x-pull" title="원격 변경사항 가져오기 (git pull)" hidden>↓</button>
-      <button class="x-pr" title="현재 브랜치로 GitHub PR 초안 만들기" hidden>PR</button>
-      <button class="x-save" title="바뀐 내용을 커밋합니다 · 메시지는 자동 생성">커밋</button>
-      <button class="x-push" title="커밋을 원격 저장소로 올립니다 (git push)">푸시</button></div>
-      <div class="xfilter-row" hidden><input class="xfilter" placeholder="파일 이름 필터…" spellcheck="false"><button class="x-newf" title="새 파일 만들기">+파일</button><button class="x-newd" title="새 폴더 만들기">+폴더</button></div>
+      <select class="x-branches" title="${L("브랜치 전환 또는 새 브랜치 만들기", "Switch or create branch")}" hidden></select>
+      <button class="x-stash" title="${L("변경사항 임시 보관 (git stash)", "Stash changes")}" hidden>${L("보관", "Stash")}</button>
+      <button class="x-pull" title="${L("원격 변경사항 가져오기 (git pull)", "Pull from remote")}" hidden>↓</button>
+      <button class="x-pr" title="${L("현재 브랜치로 GitHub PR 초안 만들기", "Create draft GitHub PR")}" hidden>PR</button>
+      <button class="x-save" title="${L("바뀐 내용을 커밋합니다 · 메시지는 자동 생성", "Commit changes")}">${L("커밋", "Commit")}</button>
+      <button class="x-push" title="${L("커밋을 원격 저장소로 올립니다 (git push)", "Push commits")}">${L("푸시", "Push")}</button></div>
+      <div class="xfilter-row" hidden><input class="xfilter" placeholder="${L("파일 이름 필터…", "Filter files…")}" spellcheck="false"><button class="x-newf" title="${L("새 파일 만들기", "New file")}">${L("+파일", "+File")}</button><button class="x-newd" title="${L("새 폴더 만들기", "New folder")}">${L("+폴더", "+Folder")}</button></div>
       <div class="xmsg" hidden></div><div class="xlist"></div>`;
     this.list = el.querySelector(".xlist");
     this.msg = el.querySelector(".xmsg");
@@ -150,7 +151,7 @@ export class Explorer {
     }
     this.saveBtn.classList.toggle("on", selected > 0);
     this.saveBtn.disabled = total > 0 && selected === 0;
-    this.saveBtn.textContent = total > 0 && selected < total ? `커밋 (${selected}/${total})` : "커밋";
+    this.saveBtn.textContent = total > 0 && selected < total ? L(`커밋 (${selected}/${total})`, `Commit (${selected}/${total})`) : L("커밋", "Commit");
   }
 
   /** Commit with a message from the free AI pool; without one, a message listing the changed files. */
@@ -307,7 +308,7 @@ export class Explorer {
       .filter(([p]) => (!this.turnOnly || !this.turnFiles || this.turnFiles.has(p)) && (!q || p.toLowerCase().includes(q)))
       .sort();
     if (!entries.length) {
-      this.list.innerHTML = `<div class="muted">${this.turnOnly ? "이번 턴에 바뀐 파일이 없습니다" : "변경된 파일이 없습니다"}</div>`;
+      this.list.innerHTML = `<div class="muted">${this.turnOnly ? L("이번 턴에 바뀐 파일이 없습니다", "No files changed in this turn") : L("변경된 파일이 없습니다", "No changed files")}</div>`;
       return;
     }
     for (const [p, code] of entries) {

@@ -1,4 +1,5 @@
 // Pure helpers (no DOM, no Tauri) so they can be tested with `node --test`.
+import { L, isEn } from "./i18n.js";
 
 /** Auto preset (spec 3.0 ⑥): grid shape for the cards shown at full size. */
 export function autoLayout(n) {
@@ -42,19 +43,19 @@ const PERMISSION = /permission|approve|허용|승인/i;
 export function hookStatus(event, data, current) {
   switch (event) {
     case "prompt":
-      return { status: "working", text: "작업 중" };
+      return { status: "working", text: L("작업 중", "Working") };
     case "invocation":
-      return current === "working" ? null : { status: "working", text: "작업 중" };
+      return current === "working" ? null : { status: "working", text: L("작업 중", "Working") };
     case "tool":
       return { status: "working", text: toolText(data) };
     case "notify": {
-      const msg = koMessage(data?.message) || "입력 대기";
+      const msg = (isEn() ? data?.message : koMessage(data?.message)) || L("입력 대기", "Waiting for input");
       // An idle reminder after the agent finished is not a new request for the user.
       if (!PERMISSION.test(msg) && (current === "done" || current === "failed")) return null;
       return { status: "waiting", text: msg };
     }
     case "stop":
-      return { status: "done", text: "완료" };
+      return { status: "done", text: L("완료", "Done") };
     default:
       return null;
   }

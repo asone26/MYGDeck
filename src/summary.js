@@ -3,16 +3,17 @@ import DOMPurify from "dompurify";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { keyLabel, permissionLine, replySuggestions, suggestsClear, timeline } from "./logic.js";
 import { statusIcon } from "./icons.js";
+import { L } from "./i18n.js";
 
 let hljsLoad = null;
 const loadHljs = () => (hljsLoad ??= import("highlight.js/lib/common").then((m) => m.default));
 
 const STATE = {
-  idle: ["💬", "준비됨"],
-  working: ["⏳", "진행 중"],
-  waiting: ["⏸", "대기"],
-  done: ["✅", "완료"],
-  exited: ["⏹", "종료됨"],
+  idle: ["💬", L("준비됨", "Idle")],
+  working: ["⏳", L("진행 중", "Working")],
+  waiting: ["⏸", L("대기", "Waiting")],
+  done: ["✅", L("완료", "Done")],
+  exited: ["⏹", L("종료됨", "Exited")],
 };
 
 function el(tag, cls, text) {
@@ -33,9 +34,9 @@ function button(label, onClick, cls = "") {
 
 export function elapsed(since) {
   const sec = Math.floor((Date.now() - since) / 1000);
-  if (sec < 60) return "방금";
+  if (sec < 60) return L("방금", "just now");
   const [m, s] = [Math.floor(sec / 60), sec % 60];
-  return s ? `${m}분 ${s}초` : `${m}분`;
+  return s ? L(`${m}분 ${s}초`, `${m}m ${s}s`) : L(`${m}분`, `${m}m`);
 }
 
 /**
@@ -53,13 +54,13 @@ export function renderSummary(card, box) {
   if (hist.length >= 2) {
     const outline = el("div", "s-outline");
     hist.forEach((h, idx) => {
-      const label = h.ask ? `${idx + 1}. ${h.ask.slice(0, 22)}${h.ask.length > 22 ? "…" : ""}` : `${idx + 1}턴`;
+      const label = h.ask ? `${idx + 1}. ${h.ask.slice(0, 22)}${h.ask.length > 22 ? "…" : ""}` : L(`${idx + 1}턴`, `Turn ${idx + 1}`);
       const b = button(label, () => box.querySelector(`.s-past[data-turn="${idx}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }), "s-jump");
       b.title = h.ask || "";
       outline.append(b);
     });
     if (card.turnAsk) {
-      outline.append(button("현재", () => box.querySelector(".s-ask.cur")?.scrollIntoView({ behavior: "smooth", block: "start" }), "s-jump cur"));
+      outline.append(button(L("현재", "Now"), () => box.querySelector(".s-ask.cur")?.scrollIntoView({ behavior: "smooth", block: "start" }), "s-jump cur"));
     }
     box.append(outline);
   }
@@ -71,15 +72,15 @@ export function renderSummary(card, box) {
     if (h.texts.length || h.checkpoint) {
       const bar = el("div", "s-past-bar");
       if (h.texts.length) {
-        const cb = button("복사", async () => {
+        const cb = button(L("복사", "Copy"), async () => {
           await navigator.clipboard.writeText(h.texts.join("\n\n")).catch(() => {});
-          cb.textContent = "복사됨 ✓";
-          setTimeout(() => { if (cb.isConnected) cb.textContent = "복사"; }, 1200);
+          cb.textContent = L("복사됨 ✓", "Copied ✓");
+          setTimeout(() => { if (cb.isConnected) cb.textContent = L("복사", "Copy"); }, 1200);
         });
         bar.append(cb);
       }
       if (h.checkpoint) {
-        bar.append(button("이 턴 직전으로 복구", () => card.restoreCheckpoint(h.checkpoint), "s-restore"));
+        bar.append(button(L("이 턴 직전으로 복구", "Restore before this turn"), () => card.restoreCheckpoint(h.checkpoint), "s-restore"));
       }
       past.append(bar);
     }
@@ -100,19 +101,19 @@ function renderCurrent(card, box, st) {
     head.append(h);
   }
   if (st === "working" && card.turnStart) head.append(el("span", "s-time s-elapsed", elapsed(card.turnStart)));
-  if (card.rotating) head.append(el("span", "s-time", "· 새 세션으로 이어가는 중"));
+  if (card.rotating) head.append(el("span", "s-time", L("· 새 세션으로 이어가는 중", "· Handing off to fresh session")));
   box.append(head);
   // Permission prompts get their own buttons; any other CLI menu must be answered in the CLI, on request.
   if (card.menuOpen && st !== "waiting") {
     const menu = el("div", "s-next");
     const choices = card.menuChoices ?? [];
     if (choices.length) {
-      menu.append(el("span", "s-q", card.menuQuestion || "선택하세요:"));
+      menu.append(el("span", "s-q", card.menuQuestion || L("선택하세요:", "Choose an option:")));
       // One key per write: the CLI may not split arrows + Enter sent as one chunk.
       for (const c of choices) menu.append(button(c.label, () => c.keys.forEach((k, i) => setTimeout(() => card.agent.write(k), i * 60))));
-      menu.append(button("취소", () => card.agent.write("\x1b")));
+      menu.append(button(L("취소", "Cancel"), () => card.agent.write("\x1b")));
     } else {
-      menu.append(el("span", "", "CLI에서 선택이 필요합니다."), button(keyLabel("CLI 열기 (Ctrl+.)"), () => card.toggleView(), "ok"));
+      menu.append(el("span", "", L("CLI에서 선택이 필요합니다.", "Selection required in CLI.")), button(keyLabel(L("CLI 열기 (Ctrl+.)", "Open CLI (Ctrl+.)")), () => card.toggleView(), "ok"));
     }
     box.append(menu);
   }

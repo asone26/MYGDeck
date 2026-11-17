@@ -17,7 +17,7 @@ PC에서 도는 에이전트를 휴대폰 브라우저로 보고 답한다. 원�
 ## 구조
 
 ```text
-휴대폰 ──▶ https://mygdeck.asone26g.workers.dev   (Cloudflare Worker: 화면 + 하루 1회 비밀번호)
+휴대폰 ──▶ https://mygdeck.<계정>.workers.dev   (Cloudflare Worker: 화면 + 하루 1회 비밀번호)
                │ /api/* 를 Workers VPC 바인딩 PC 로 중계
                ▼
            이름 있는 터널 "mygdeck"   (공개 주소 없음 · 도메인 불필요 · PC에서 밖으로만 연결)
@@ -35,8 +35,8 @@ PC에서 도는 에이전트를 휴대폰 브라우저로 보고 답한다. 원�
 | 이름 | 종류 | 용도 |
 |---|---|---|
 | `mygdeck` | Worker (`cloud/worker.js`) | 화면, 로그인, 중계 |
-| `mygdeck` | Tunnel `527387b1-…` | PC 연결 (공개 hostname 없음) |
-| `mygdeck-pc` | VPC Service `01a1ce28-…` | 터널 → `127.0.0.1:7781` |
+| `mygdeck` | Tunnel `<터널 ID>` | PC 연결 (공개 hostname 없음) |
+| `mygdeck-pc` | VPC Service `<VPC 서비스 ID>` | 터널 → `127.0.0.1:7781` |
 | `mygdeck-relay` | KV | 로그인 실패 횟수 |
 | Worker 비밀값 | `DASH_PASSWORD`, `SESSION_SECRET`, `DASH_TOKEN` | 비밀번호, 쿠키 서명, 대시보드 토큰 |
 
@@ -45,7 +45,7 @@ PC 쪽: `~/.mygdeck/mobile.json`에 포트, 대시보드 토큰, Worker 주소, 
 ## 평소 사용
 
 - 덱을 열면 터널이 연결된다. 확인: `mygdeck-cli mobile` → `터널: 연결됨`.
-- 휴대폰에서 `https://mygdeck.asone26g.workers.dev` → 비밀번호 → 목록. **홈 화면에 추가**로 앱처럼 쓴다.
+- 휴대폰에서 `https://mygdeck.<계정>.workers.dev` → 비밀번호 → 목록. **홈 화면에 추가**로 앱처럼 쓴다.
 - 비밀번호를 10번 틀리면 그 주소는 15분간 막힌다.
 - 덱이 꺼져 있으면 휴대폰에는 "PC에 연결할 수 없습니다"가 뜬다.
 

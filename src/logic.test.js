@@ -294,3 +294,19 @@ test("formatReviewComments and pickErrorLines format agent prompts cleanly", asy
   const out = pickErrorLines(["ok 1", "ok 2", "TypeError: boom", "at line 5"]);
   assert.ok(out.includes("TypeError: boom"));
 });
+
+test("i18n switches between Korean and English via localStorage", async () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  try {
+    const { getLang, setLang, L } = await import("./i18n.js");
+    assert.equal(getLang(), "ko");
+    assert.equal(L("작업 중", "Working"), "작업 중");
+    setLang("en");
+    assert.equal(getLang(), "en");
+    assert.equal(L("작업 중", "Working"), "Working");
+    assert.deepEqual(hookStatus("stop"), { status: "done", text: "Done" });
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
