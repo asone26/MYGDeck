@@ -79,6 +79,8 @@ struct Session {
     /// Status comes from hooks once the first hook arrives; before that, from output activity.
     hooked: bool,
     status: String,
+    /// Unix timestamp (seconds) when `status` last changed.
+    status_since: u64,
     text: String,
     tool: Value,
     transcript: Value,
@@ -209,6 +211,7 @@ impl Hub {
                 last_output: Instant::now(),
                 hooked: false,
                 status: "starting".into(),
+                status_since: now_secs(),
                 text: String::new(),
                 tool: Value::Null,
                 transcript: Value::Null,
@@ -278,6 +281,9 @@ impl Hub {
                 "stop" => (x.status, x.text) = ("done".into(), "완료".into()),
                 _ => {}
             }
+            if x.status != before {
+                x.status_since = now_secs();
+            }
             note = crate::mobile::note(&ev.id, &x.cwd, &before, &x.status, &x.text, &x.tool);
         }
         self.broadcast(json!({ "ev": "hook", "id": ev.id, "event": ev.event, "data": ev.data }));
@@ -302,7 +308,7 @@ impl Hub {
                 };
                 json!({
                     "id": id, "cwd": x.cwd, "command": x.command, "started": x.started,
-                    "status": status, "text": x.text, "tool": x.tool, "transcript": x.transcript,
+                    "status": status, "status_since": x.status_since, "text": x.text, "tool": x.tool, "transcript": x.transcript,
                     "idle_secs": x.last_output.elapsed().as_secs(),
                     "hooked": x.hooked, "cols": x.cols, "rows": x.rows,
                 })
@@ -746,6 +752,7 @@ mod tests {
         let list = cli.call(json!({ "op": "list" })).unwrap();
         assert_eq!(list[0]["id"], id);
         assert_eq!(list[0]["status"], "working");
+        assert!(list[0]["status_since"].as_u64().unwrap_or(0) > 0);
         assert_eq!(list[0]["text"], "Edit a.rs");
 
         // Reattach: the buffered output comes back as one replay event.

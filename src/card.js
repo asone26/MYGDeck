@@ -177,7 +177,8 @@ export class Card {
       this.resuming = true;
       this.startedAt = Date.now();
     }
-    this.setStatus(status, (status === "working" || status === "waiting") && s.text ? s.text : "다시 연결됨");
+    const since = s.status_since && status === s.status ? s.status_since * 1000 : undefined;
+    this.setStatus(status, (status === "working" || status === "waiting") && s.text ? s.text : "다시 연결됨", since);
     if (status === "working") this.turnStart = null;
     if (status === "working" || status === "waiting") this.peekTurn();
     if (this.transcript && (status === "done" || status === "idle")) {
@@ -228,10 +229,11 @@ export class Card {
     this.app.onPinChange?.(this);
   }
 
-  setStatus(status, text) {
+  setStatus(status, text, since) {
     const prev = this.status;
     Object.assign(this, { status, statusText: text });
-    if (prev !== status) this.since = Date.now(); // the strip shows how long a card has been waiting
+    if (since) this.since = since;
+    else if (prev !== status) this.since = Date.now(); // the strip shows how long a card has been waiting
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
     const banner = this.$(".conn-banner");
