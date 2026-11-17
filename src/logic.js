@@ -105,6 +105,23 @@ export function nextAttention(statuses, active) {
   return -1;
 }
 
+/** Short "waiting for" label on a strip chip: "<1분", "12분", "2시간". */
+export function waitAge(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return L("<1분", "<1m");
+  if (m < 60) return L(`${m}분`, `${m}m`);
+  return L(`${Math.floor(m / 60)}시간`, `${Math.floor(m / 60)}h`);
+}
+
+/** Index of the card that has waited on the user the longest (`since` = when it started waiting), -1 if none. */
+export function longestWaiting(cards) {
+  let best = -1;
+  cards.forEach((c, i) => {
+    if (c.status === "waiting" && (best < 0 || c.since < cards[best].since)) best = i;
+  });
+  return best;
+}
+
 /** Subsequence fuzzy filter for quick open; matches inside the file name rank first. */
 export function fuzzyFilter(query, items, limit = 60) {
   const q = query.toLowerCase().replace(/\s+/g, "");

@@ -231,6 +231,7 @@ export class Card {
   setStatus(status, text) {
     const prev = this.status;
     Object.assign(this, { status, statusText: text });
+    if (prev !== status) this.since = Date.now(); // the strip shows how long a card has been waiting
     if (status === "idle") this.onReady?.();
     this.el.dataset.status = status;
     const banner = this.$(".conn-banner");

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine, parseDiff, addedRows, contextLimit } from "./logic.js";
+import { permissionLine, MENU, menuChoices, menuQuestion, autoLayout, splitDeck, projectColor, isDeckKey, keyCode, keyLabel, hookStatus, nextAttention, fuzzyFilter, lineRange, mentionFor, pasteSequence, basename, seedPrompt, handoffPrompt, promptWaiting, isAgentNotice, ghostSuggestion, timeline, errorLine, parseDiff, addedRows, contextLimit, waitAge, longestWaiting } from "./logic.js";
 
 test("auto layout follows project count", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(autoLayout), ["one", "one", "two", "three", "many", "many"]);
@@ -26,6 +26,13 @@ test("next attention prefers waiting, wraps around", () => {
   assert.equal(nextAttention(["done", "failed", "idle"], 2), 1);
   assert.equal(hookStatus("notify", { message: "Claude is waiting for your input" }, "failed"), null);
   assert.equal(nextAttention(["working", "idle"], 0), -1);
+});
+
+test("strip shows how long cards wait and which waited longest", () => {
+  assert.deepEqual([30e3, 12 * 60e3, 125 * 60e3].map(waitAge), ["<1분", "12분", "2시간"]);
+  const cards = [{ status: "waiting", since: 300 }, { status: "done", since: 50 }, { status: "waiting", since: 100 }];
+  assert.equal(longestWaiting(cards), 2);
+  assert.equal(longestWaiting([{ status: "idle", since: 1 }]), -1);
 });
 
 test("fuzzy filter ranks file-name matches first", () => {

@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { Image } from "@tauri-apps/api/image";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Card } from "./card.js";
 import { initCosmos } from "./cosmos.js";
@@ -14,7 +15,7 @@ import { ptys, setTermFontSize, setTermTheme } from "./pty.js";
 import { exportMarkdown } from "./summary.js";
 import { ICONS, icon, statusIcon } from "./icons.js";
 import { L, applyStaticI18n } from "./i18n.js";
-import { DENSITIES, autoLayout, findFileConflicts, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, nextAttention, splitDeck } from "./logic.js";
+import { DENSITIES, autoLayout, findFileConflicts, fuzzyFilter, IS_MAC, isDeckKey, isDeckMod, keyCode, keyLabel, longestWaiting, nextAttention, splitDeck, waitAge } from "./logic.js";
 import {
   loadKeyOverrides,
   openBroadcast as showBroadcast,
@@ -455,14 +456,19 @@ function setActive(i, focus = true) {
 function renderStrip() {
   const chips = $("chips");
   chips.textContent = "";
+  const now = Date.now();
+  const waiting = app.cards.filter((c) => c.status === "waiting").length;
+  const oldest = longestWaiting(app.cards);
   app.cards.forEach((c, i) => {
     const b = document.createElement("button");
-    b.className = "chip" + (i === app.active ? " on" : "");
+    b.className = "chip" + (i === app.active ? " on" : "") + (waiting > 1 && i === oldest ? " oldest" : "");
     b.dataset.status = c.status;
     b.style.setProperty("--pc", c.color);
-    b.title = `#${i + 1} ${c.root}\n${c.statusText}`;
-    b.innerHTML = `<span class="dot"></span><span class="cn"></span><span class="cx" title="${keyLabel(L("닫기 (Ctrl+F4)", "Close (Ctrl+F4)"))}">${icon(ICONS.X)}</span>`;
+    const age = c.status === "waiting" ? waitAge(now - c.since) : "";
+    b.title = `#${i + 1} ${c.root}\n${c.statusText}${age ? ` · ${age}` : ""}`;
+    b.innerHTML = `<span class="dot"></span><span class="cn"></span>${age ? `<span class="cw"></span>` : ""}<span class="cx" title="${keyLabel(L("닫기 (Ctrl+F4)", "Close (Ctrl+F4)"))}">${icon(ICONS.X)}</span>`;
     b.querySelector(".cn").textContent = c.name;
+    if (age) b.querySelector(".cw").textContent = age;
     b.onclick = (e) => (e.target.closest(".cx") ? closeCard(c) : setActive(i));
     b.draggable = true;
     b.ondragstart = (e) => e.dataTransfer.setData("text/x-card", String(i));
@@ -478,9 +484,55 @@ function renderStrip() {
     };
     chips.append(b);
   });
+  // Summary pill: how many projects are blocked on the user; click goes to the one waiting longest.
+  const wb = $("wait-btn");
+  wb.hidden = !waiting;
+  wb.textContent = L(`응답 대기 ${waiting}`, `${waiting} waiting`);
+  wb.title = L("가장 오래 기다린 프로젝트로 이동", "Go to the project waiting longest");
+  wb.onclick = () => setActive(longestWaiting(app.cards));
+  // The taskbar shows the count too, so a background deck still says who is stuck.
+  const title = waiting ? `(${waiting}) MYG Deck` : "MYG Deck";
+  if (document.title !== title) {
+    document.title = title;
+    getCurrentWindow().setTitle(title).catch(() => {});
+  }
+  updateTaskbarBadge(waiting);
   moveGlider();
   updateAura();
 }
+
+let badgeShown = 0;
+/** Taskbar badge with the waiting count: an overlay icon on Windows, the dock/launcher badge elsewhere. */
+async function updateTaskbarBadge(n) {
+  if (n === badgeShown) return;
+  badgeShown = n;
+  const win = getCurrentWindow();
+  if (!/Windows/.test(navigator.userAgent)) return win.setBadgeCount(n || undefined).catch(() => {});
+  if (!n) return win.setOverlayIcon(undefined).catch(() => {});
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 32;
+  const g = cv.getContext("2d");
+  g.fillStyle = "#ffb547";
+  g.beginPath();
+  g.arc(16, 16, 16, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#2a1a04";
+  g.font = `bold ${n > 9 ? 15 : 21}px system-ui, sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(n > 9 ? "9+" : String(n), 16, 17);
+  const img = await Image.new(g.getImageData(0, 0, 32, 32).data, 32, 32).catch(() => null);
+  if (img && badgeShown === n) win.setOverlayIcon(img).catch(() => {});
+}
+
+// Keep the chips' "waiting for" ages current without rebuilding the strip.
+setInterval(() => {
+  const now = Date.now();
+  $("chips").querySelectorAll(".chip").forEach((b, i) => {
+    const w = b.querySelector(".cw");
+    if (w && app.cards[i]) w.textContent = waitAge(now - app.cards[i].since);
+  });
+}, 30000);
 
 function closeOverlay() {
   overlay.hidden = true;
